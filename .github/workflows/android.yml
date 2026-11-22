@@ -3,6 +3,8 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+permissions:
+  contents: write
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -30,3 +32,10 @@ jobs:
         with:
           name: fynza-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Publish APK as a GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk FYNZA.apk
+          TAG="apk-${{ github.run_number }}"
+          gh release create "$TAG" FYNZA.apk --title "FYNZA APK (build ${{ github.run_number }})" --notes "Debug APK built by GitHub Actions. Install on Android (allow unknown sources)."
