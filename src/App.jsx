@@ -11,6 +11,7 @@ import { startMessengerSync, stopMessengerSync } from './msgx.js';
 import { Friends, Reels, MenuPage, Notifications, Visitors, Saved, Settings, Help, SearchPage } from './more.jsx';
 import { Groups, GroupPage, Pages, PagePage } from './groups.jsx';
 import { Admin } from './admin.jsx';
+import { Market } from './market.jsx';
 
 const TABS = [
   ['feed', 'Home', IoHomeOutline, IoHome],
@@ -53,6 +54,7 @@ export default function App() {
     case 'visitors': page = <Visitors />; break;
     case 'saved': page = <Saved />; break;
     case 'admin': page = <Admin />; break;
+    case 'market': page = <Market />; break;
     case 'pages': page = <Pages />; break;
     case 'group': page = <GroupPage id={arg} />; break;
     case 'page': page = <PagePage id={arg} />; break;
@@ -83,7 +85,7 @@ export default function App() {
         </nav>
         <div className="top-actions">
           <a href="#/search" aria-label="Search" className="top-btn"><IoSearch size={22} /></a>
-          <a href="#/messenger" aria-label="Messenger" className="top-btn"><IoChatbubbleEllipsesOutline size={22} /></a>
+          <a href="#/messenger" aria-label="Message" className="top-btn"><IoChatbubbleEllipsesOutline size={22} /></a>
           <a href="#/notifications" aria-label="Notifications" className="top-btn"><IoNotificationsOutline size={22} />{unread > 0 && <i className="badge">{unread > 9 ? '9+' : unread}</i>}</a>
           <a href={'#/profile/' + user.id} className="top-btn desk-only" aria-label="My profile"><Avatar user={user} size={32} /></a>
         </div>

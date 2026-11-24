@@ -119,9 +119,9 @@ function startRingWatch(id) {
 }
 
 async function getMedia(kind) {
-  if (!navigator.mediaDevices?.getUserMedia) throw new Error('এই ডিভাইসে কল চালানো যায় না (মাইক/ক্যামেরা সাপোর্ট নেই)।');
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error('Calls are not supported on this device (no mic/camera support).');
   try { return await navigator.mediaDevices.getUserMedia({ audio: true, video: kind === 'video' ? { facingMode: 'user' } : false }); }
-  catch (e) { throw new Error(kind === 'video' ? 'ক্যামেরা/মাইকের অনুমতি দিন।' : 'মাইকের অনুমতি দিন।'); }
+  catch (e) { throw new Error(kind === 'video' ? 'Allow camera/microphone access.' : 'Allow microphone access.'); }
 }
 
 function makePc(callId, peerId) {
@@ -133,7 +133,7 @@ function makePc(callId, peerId) {
   pc.onicecandidate = (e) => { if (e.candidate) cloud.sendSignal(meId(), callId, peerId, 'ice', e.candidate.toJSON()).catch(() => {}); };
   pc.onconnectionstatechange = () => {
     if (pc?.connectionState === 'connected') { clearTimeout(ringTimer); setCall({ status: 'connected', started: st.call?.started || Date.now() }); }
-    if (pc?.connectionState === 'failed') endCall('সংযোগ হয়নি। দুজনের ইন্টারনেট দেখুন।');
+    if (pc?.connectionState === 'failed') endCall('Could not connect. Check both internet connections.');
   };
   local && setCall({ local });
 }
@@ -158,12 +158,12 @@ async function pollSignals(callId, role) {
       }
     }
     const c = await cloud.getCall(callId);
-    if (c && ['ended', 'declined', 'missed'].includes(c.status)) endCall(c.status === 'declined' ? 'কল রিজেক্ট করা হয়েছে।' : 'কল শেষ।', true);
+    if (c && ['ended', 'declined', 'missed'].includes(c.status)) endCall(c.status === 'declined' ? 'Call declined.' : 'Call ended.', true);
   } catch (e) { /* network hiccup: keep polling */ }
 }
 
 export async function placeCall(convId, peerId, kind) {
-  if (st.call || busy) return toast('আরেকটি কল চলছে।');
+  if (st.call || busy) return toast('Another call is in progress.');
   busy = true;
   try {
     local = await getMedia(kind);
@@ -173,10 +173,10 @@ export async function placeCall(convId, peerId, kind) {
     const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
     await cloud.sendSignal(meId(), id, peerId, 'offer', { type: offer.type, sdp: offer.sdp });
     sigTimer = setInterval(() => pollSignals(id, 'caller'), 1000);
-    ringTimer = setTimeout(() => { if (st.call?.status === 'calling') endCall('উত্তর দেয়নি।'); }, 40000);
+    ringTimer = setTimeout(() => { if (st.call?.status === 'calling') endCall('No answer.'); }, 40000);
   } catch (e) {
     local?.getTracks().forEach((t) => t.stop()); local = null;
-    toast(/busy/.test(e.message) ? 'লাইন ব্যস্ত, একটু পরে চেষ্টা করুন।' : /blocked/.test(e.message) ? 'ব্লক থাকায় কল করা যাবে না।' : e.message);
+    toast(/busy/.test(e.message) ? 'Line busy, please try again later.' : /blocked/.test(e.message) ? 'Cannot call because of a block.' : e.message);
   } finally { busy = false; }
 }
 

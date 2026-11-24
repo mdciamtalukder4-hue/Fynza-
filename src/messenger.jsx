@@ -59,7 +59,7 @@ export function Messenger() {
     <div className="mess">
       <div className="mess-head">
         <button className="icon-btn" aria-label="Back" onClick={() => back()}><IoArrowBack size={22} /></button>
-        <h1>Messenger</h1>
+        <h1>Message</h1>
         <div className="row">
           {user.cloud && canNotify() && perm === 'default' && <button className="icon-btn" aria-label="Turn on message alerts" title="Message alerts" onClick={() => askNotify().then(setPerm)}><IoNotifications size={22} /></button>}
           {tab === 'groups' && <button className="icon-btn" aria-label="New group" onClick={() => setMake(true)}><IoAdd size={26} /></button>}
@@ -73,7 +73,7 @@ export function Messenger() {
       )}
       <div className="seg" role="tablist">{[['chats', 'Chats'], ['groups', 'Groups']].map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
       <div className="conv-list">
-        {chats.length === 0 && <p className="muted center pad">{q ? 'কিছু পাওয়া যায়নি।' : tab === 'chats' ? 'কোনো চ্যাট নেই। কারও প্রোফাইল থেকে Message চাপুন।' : 'কোনো গ্রুপ চ্যাট নেই। + চাপুন।'}</p>}
+        {chats.length === 0 && <p className="muted center pad">{q ? 'Nothing found।' : tab === 'chats' ? 'No chats yet. Tap Message on a profile.' : 'No group chats yet. Tap +.'}</p>}
         {chats.map((c) => {
           const last = c.msgs[c.msgs.length - 1]; const n = unread(c); const o = other(c); const typing = (mx.typing[c.id] || []).length > 0;
           return (
@@ -88,9 +88,9 @@ export function Messenger() {
       {make && (
         <Sheet title="New group chat" onClose={() => setMake(false)}>
           <input className="input" placeholder="Group name" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Group name" />
-          {friends.length === 0 && <p className="muted">গ্রুপ চ্যাটের জন্য আগে বন্ধু যোগ করুন।</p>}
+          {friends.length === 0 && <p className="muted">Add friends first to start a group chat.</p>}
           {friends.map((f) => <label className="person" key={f.id}><input type="checkbox" checked={sel.includes(f.id)} onChange={(e) => setSel(e.target.checked ? [...sel, f.id] : sel.filter((x) => x !== f.id))} /><Avatar user={f} size={36} /><b>{f.name}</b></label>)}
-          <button className="btn primary big" onClick={() => { if (!title.trim() || sel.length === 0) return toast('নাম দিন ও কমপক্ষে একজন বন্ধু বাছুন।'); const mk = async () => { if (user.cloud) { const r = await createGroupChatOnline(title.trim(), sel); if (r.error) return toast(r.error); go('#/chat/' + r.id); } else { const id = createGroupChat(title.trim(), sel); go('#/chat/' + id); } setMake(false); setTitle(''); setSel([]); }; mk(); }}>Create group chat</button>
+          <button className="btn primary big" onClick={() => { if (!title.trim() || sel.length === 0) return toast('Enter a name and pick at least one friend.'); const mk = async () => { if (user.cloud) { const r = await createGroupChatOnline(title.trim(), sel); if (r.error) return toast(r.error); go('#/chat/' + r.id); } else { const id = createGroupChat(title.trim(), sel); go('#/chat/' + id); } setMake(false); setTitle(''); setSel([]); }; mk(); }}>Create group chat</button>
         </Sheet>
       )}
     </div>
@@ -116,7 +116,7 @@ function useRecorder(onDone) {
   const stopAll = () => { clearInterval(r.current.t); r.current.stream?.getTracks().forEach((t) => t.stop()); };
   useEffect(() => () => { r.current.cancel = true; try { r.current.mr?.stop(); } catch (e) { /* ignore */ } stopAll(); }, []);
   const start = async () => {
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') return toast('এই ডিভাইসে ভয়েস রেকর্ড করা যায় না।');
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') return toast('Voice recording is not supported on this device.');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find((m) => MediaRecorder.isTypeSupported?.(m));
@@ -128,13 +128,13 @@ function useRecorder(onDone) {
         stopAll(); setRec(null);
         if (r.current.cancel) return;
         const secs = (Date.now() - t0) / 1000;
-        if (secs < 0.8) return toast('ভয়েস খুব ছোট।');
+        if (secs < 0.8) return toast('Voice message is too short.');
         onDone(new Blob(chunks, { type: (mr.mimeType || 'audio/webm').split(';')[0] }), secs);
       };
       mr.start(250);
       setRec({ secs: 0 });
       r.current.t = setInterval(() => { const s = (Date.now() - t0) / 1000; setRec({ secs: s }); if (s >= 300) mr.stop(); }, 250);
-    } catch (e) { toast('মাইকের অনুমতি দিন।'); }
+    } catch (e) { toast('Allow microphone access.'); }
   };
   const stop = (cancel) => { r.current.cancel = !!cancel; try { r.current.mr?.stop(); } catch (e) { stopAll(); setRec(null); } };
   return { rec, start, stop };
@@ -175,9 +175,9 @@ export function Chat({ id }) {
 
   const rec = useRecorder((blob, secs) => { stick.current = true; sendRich(id, { kind: 'voice', blob, duration: secs, replyTo: reply?.id }); setReply(null); });
 
-  if (!c) return <Empty title="চ্যাট পাওয়া যায়নি"><a className="btn primary sm" href="#/messenger">Messenger</a></Empty>;
+  if (!c) return <Empty title="Chat not found"><a className="btn primary sm" href="#/messenger">Message</a></Empty>;
   const o = s.users[c.members.find((m) => m !== user.id)];
-  if (!c.group && o && isBlocked(s, user.id, o.id)) return <Empty title="এই চ্যাট বন্ধ" text="ব্লক করা ব্যবহারকারীকে মেসেজ করা যায় না.">{o && <button className="btn primary sm" onClick={() => { unblockUser(o.id); toast('আনব্লক করা হয়েছে।'); }}>Unblock</button>}</Empty>;
+  if (!c.group && o && isBlocked(s, user.id, o.id)) return <Empty title="This chat is closed" text="You cannot message a blocked user.">{o && <button className="btn primary sm" onClick={() => { unblockUser(o.id); toast('Unblocked.'); }}>Unblock</button>}</Empty>;
 
   const typers = (mx.typing[id] || []).filter((x) => x !== user.id);
   const byId = Object.fromEntries(c.msgs.map((m) => [m.id, m]));
@@ -198,9 +198,9 @@ export function Chat({ id }) {
     if (kind === 'photo') {
       stick.current = true;
       if (f.type.startsWith('image/')) compressImage(f, 1280).then((d) => (cloud ? sendRich(id, { kind: 'image', dataUrl: d, replyTo: reply?.id }) : sendMessage(id, '', d)));
-      else if (f.type.startsWith('video/')) { if (f.size > MAX_FILE) return toast('ভিডিও ২৫ MB-এর বেশি বড়।'); sendRich(id, { kind: 'video', blob: f, replyTo: reply?.id }); }
-      else toast('ছবি বা ভিডিও বাছুন।');
-    } else { if (f.size > MAX_FILE) return toast('ফাইল ২৫ MB-এর বেশি বড়।'); stick.current = true; sendRich(id, { kind: 'file', blob: f, fileName: f.name.slice(0, 120), replyTo: reply?.id }); }
+      else if (f.type.startsWith('video/')) { if (f.size > MAX_FILE) return toast('Video is larger than 25 MB.'); sendRich(id, { kind: 'video', blob: f, replyTo: reply?.id }); }
+      else toast('Choose a photo or video.');
+    } else { if (f.size > MAX_FILE) return toast('File is larger than 25 MB.'); stick.current = true; sendRich(id, { kind: 'file', blob: f, fileName: f.name.slice(0, 120), replyTo: reply?.id }); }
     setReply(null);
   };
   const statusOf = (m) => {
@@ -214,7 +214,7 @@ export function Chat({ id }) {
   const subtitle = c.group ? `${c.members.length} members` : typers.length ? 'typing…' : isOnlineNow(o?.id) ? 'Active now' : lastSeenText(o?.id);
   const canCall = cloud && !c.group && o;
 
-  const copy = (m) => { try { navigator.clipboard.writeText(m.text); toast('কপি হয়েছে।'); } catch (e) { toast('কপি করা যায়নি।'); } setAct(null); };
+  const copy = (m) => { try { navigator.clipboard.writeText(m.text); toast('Copied.'); } catch (e) { toast('Could not copy.'); } setAct(null); };
 
   let lastDay = '';
   return (
@@ -229,7 +229,7 @@ export function Chat({ id }) {
       </div>
 
       <div className="msgs v2" ref={box} onScroll={onScroll} onClick={() => panel && setPanel('')}>
-        {c.msgs.length === 0 && <p className="muted center">প্রথম মেসেজটি পাঠান। 👋</p>}
+        {c.msgs.length === 0 && <p className="muted center">Send the first message. 👋</p>}
         {c.msgs.map((m, i) => {
           const mine = m.from === user.id; const d = dayLabel(m.time); const sep = d !== lastDay; lastDay = d;
           const prev = c.msgs[i - 1]; const next = c.msgs[i + 1];
@@ -314,7 +314,7 @@ export function Chat({ id }) {
           {cloud && !act.deleted && <button className="menu-item" onClick={() => { setReply(act); setAct(null); input.current?.focus(); }}><IoArrowUndo /> Reply</button>}
           {act.text && !act.deleted && <button className="menu-item" onClick={() => copy(act)}><IoCopy /> Copy</button>}
           {cloud && act.from === user.id && !act.deleted && (act.kind || 'text') === 'text' && <button className="menu-item" onClick={() => { setEdit(act); setT(act.text); setReply(null); setAct(null); input.current?.focus(); }}><IoCreate /> Edit</button>}
-          {cloud && act.from === user.id && !act.deleted && <button className="menu-item danger" onClick={() => { if (confirm('এই মেসেজ সবার জন্য মুছে ফেলবেন?')) deleteMessageOnline(id, act.id); setAct(null); }}><IoTrash /> Delete for everyone</button>}
+          {cloud && act.from === user.id && !act.deleted && <button className="menu-item danger" onClick={() => { if (confirm('Delete this message for everyone?')) deleteMessageOnline(id, act.id); setAct(null); }}><IoTrash /> Delete for everyone</button>}
           {cloud && act.from !== user.id && !act.deleted && <button className="menu-item" onClick={() => { askReport('message', act.id); setAct(null); }}><IoFlag /> Report message</button>}
           <small className="muted">{fullTime(act.time)}</small>
         </Sheet>
@@ -322,11 +322,11 @@ export function Chat({ id }) {
       {menu && (
         <Sheet title={c.group ? c.title : o?.name} onClose={() => setMenu(false)}>
           {!c.group && o && <a className="menu-item" href={'#/profile/' + o.id} onClick={() => setMenu(false)}><IoPerson /> View profile</a>}
-          {!c.group && o && <button className="menu-item danger" onClick={() => { if (confirm(o.name + ' কে ব্লক করবেন? সে আপনাকে মেসেজ/কল করতে পারবে না।')) { blockUser(o.id); setMenu(false); go('#/messenger'); } }}><IoBan /> Block {o.name.split(' ')[0]}</button>}
+          {!c.group && o && <button className="menu-item danger" onClick={() => { if (confirm(o.name + ' will be blocked. They will not be able to message or call you.')) { blockUser(o.id); setMenu(false); go('#/messenger'); } }}><IoBan /> Block {o.name.split(' ')[0]}</button>}
           {!c.group && o && <button className="menu-item" onClick={() => { askReport('user', o.id); setMenu(false); }}><IoFlag /> Report user</button>}
-          {c.group && cloud && <button className="menu-item danger" onClick={async () => { if (!confirm('এই গ্রুপ ছেড়ে যাবেন?')) return; const e = await leaveChatOnline(id); if (e) toast(e); else go('#/messenger'); }}><IoExit /> Leave group</button>}
+          {c.group && cloud && <button className="menu-item danger" onClick={async () => { if (!confirm('Leave this group?')) return; const e = await leaveChatOnline(id); if (e) toast(e); else go('#/messenger'); }}><IoExit /> Leave group</button>}
           {c.group && <div className="muted pad">{c.members.map((m) => nameOf(m)).join(', ')}</div>}
-          {cloud && <p className="muted"><small>🔒 চ্যাটের ছবি/ভিডিও/ফাইল প্রাইভেট স্টোরেজে থাকে; শুধু এই চ্যাটের সদস্যরা দেখতে পারে।</small></p>}
+          {cloud && <p className="muted"><small>🔒 Chat photos/videos/files are kept in private storage; only members of this chat can see them.</small></p>}
         </Sheet>
       )}
       {zoom && <div className="lightbox" onClick={() => setZoom('')}><img src={zoom} alt="" /><button className="icon-btn" aria-label="Close"><IoClose size={28} /></button></div>}

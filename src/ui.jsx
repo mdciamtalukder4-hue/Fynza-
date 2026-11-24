@@ -8,19 +8,16 @@ export const go = (path) => { location.hash = path; };
 export const back = (fallback = '#/feed') => { if (history.length > 1) history.back(); else go(fallback); };
 
 // ---------- logo ----------
+export const LOGO_PATHS = ['M30 79 C25 52 36 28 78 21 C70 36 58 38 51 44 C45 49 43 58 43 66 C43 72 38 76 30 79 Z', 'M45 58 C52 50 62 48 73 49 C66 59 56 59 47 66 Z'];
 export function LogoMark({ size = 40, flat = false }) {
   const id = 'lg' + size + (flat ? 'f' : '');
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" role="img" aria-label="FYNZA logo">
       <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#3B7BFF" /><stop offset="1" stopColor="#1A2BB8" /></linearGradient>
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#2F7BFF" /><stop offset="1" stopColor="#1C1C9C" /></linearGradient>
       </defs>
-      {!flat && <rect width="100" height="100" rx="26" fill={`url(#${id})`} />}
-      <g fill="none" stroke="#fff" strokeWidth="10" strokeLinecap="round">
-        <path d="M36 78C37 62 40 48 45 38" />
-        <path d="M45 38C51 29 63 26 77 28" />
-        <path d="M40 57C48 51 58 50 69 52" />
-      </g>
+      {!flat && <rect width="100" height="100" rx="24" fill={`url(#${id})`} />}
+      <g fill="#fff" stroke="#fff" strokeWidth="3" strokeLinejoin="round">{LOGO_PATHS.map((d) => <path key={d} d={d} />)}</g>
     </svg>
   );
 }
@@ -53,7 +50,7 @@ export function Video({ vkey, url: direct, className, controls = true, ...rest }
   const [url, setUrl] = useState(direct || '');
   useEffect(() => { if (direct || !vkey) return undefined; let alive = true, u = ''; getVideoUrl(vkey).then((x) => { u = x; if (alive) setUrl(x); }); return () => { alive = false; if (u) URL.revokeObjectURL(u); }; }, [vkey, direct]);
   if (direct) return <video src={direct} className={className} controls={controls} playsInline preload="metadata" {...rest} />;
-  if (!url) return <div className={'video-loading ' + (className || '')}>ভিডিও লোড হচ্ছে…</div>;
+  if (!url) return <div className={'video-loading ' + (className || '')}>Loading video…</div>;
   return <video src={url} className={className} controls={controls} playsInline {...rest} />;
 }
 
@@ -66,7 +63,7 @@ export function Sheet({ title, onClose, children }) {
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-head"><b>{title}</b><button className="icon-btn" aria-label="বন্ধ করুন" onClick={onClose}>✕</button></div>
+        <div className="sheet-head"><b>{title}</b><button className="icon-btn" aria-label="Close" onClick={onClose}>✕</button></div>
         <div className="sheet-body">{children}</div>
       </div>
     </div>
@@ -76,7 +73,7 @@ export function Sheet({ title, onClose, children }) {
 let toastSet = null;
 export const toast = (m) => toastSet && toastSet(m);
 export function LocalNote({ what, phase }) {
-  return <div className="local-note">ℹ️ {what} এখনও শুধু এই ফোনে চলে (অনলাইনে আসবে Phase {phase}-এ)। অন্য ডিভাইসে দেখা যাবে না।</div>;
+  return <div className="local-note">ℹ️ {what} currently works on this phone only (it will go online in Phase {phase}). It will not be visible on other devices.</div>;
 }
 export function Toaster() {
   const [m, setM] = useState('');

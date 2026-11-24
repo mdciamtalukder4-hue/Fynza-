@@ -3,7 +3,7 @@
 // In Phase 3 this file is replaced by the real Supabase backend with the same functions.
 import { useSyncExternalStore } from 'react';
 import * as cloud from './cloud.js';
-import { isOnline, cloudSignUp, cloudSignIn, cloudSignOut, usernameAvailable, validSession, fetchMyProfile, patchMyProfile, passwordProblems, mfaLoginVerify } from './supabase.js';
+import { isOnline, cloudSignUp, cloudSignIn, cloudSignOut, usernameAvailable, validSession, fetchMyProfile, patchMyProfile, passwordProblems, mfaLoginVerify, verifyPhoneOtp, resendPhoneOtp, normalizePhone, looksLikePhone } from './supabase.js';
 
 const KEY = 'fynza_v2';
 const DAY = 86400000;
@@ -41,7 +41,7 @@ export let saveError = null;
 
 function persist() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); saveError = null; }
-  catch (e) { saveError = 'ব্রাউজারের জায়গা শেষ। ছবি কম ব্যবহার করুন বা পুরনো পোস্ট মুছুন।'; }
+  catch (e) { saveError = 'Browser storage is full. Use fewer images or delete old posts.'; }
 }
 function set(fn) {
   state = fn(state) || state;
@@ -68,32 +68,33 @@ export const mySettings = (s = state, id = state.me) => ({
 export function timeAgo(t) {
   const d = Math.max(0, now() - t);
   const m = Math.floor(d / 60000);
-  if (m < 1) return 'এইমাত্র';
-  if (m < 60) return m + ' মিনিট আগে';
+  if (m < 1) return 'just now';
+  if (m < 60) return m + ' min ago';
   const h = Math.floor(m / 60);
-  if (h < 24) return h + ' ঘণ্টা আগে';
+  if (h < 24) return h + ' h ago';
   const dd = Math.floor(h / 24);
-  if (dd < 30) return dd + ' দিন আগে';
+  if (dd < 30) return dd + ' d ago';
   return new Date(t).toLocaleDateString();
 }
 export const fullTime = (t) => new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 
 // ---------- auth ----------
-export async function register({ name, username, email, password }) {
+export async function register({ name, username, email = '', phone = '', password }) {
   name = name.trim(); username = username.trim().replace(/^@/, '').toLowerCase(); email = email.trim().toLowerCase();
-  if (name.length < 2) return 'নাম কমপক্ষে ২ অক্ষরের হতে হবে।';
-  if (!/^[a-z0-9_.]{3,20}$/.test(username)) return 'ইউজারনেম ৩-২০ অক্ষর; শুধু a-z, 0-9, _ এবং . চলবে।';
-  if (!/^\S+@\S+\.\S+$/.test(email)) return 'সঠিক ইমেইল দিন।';
-  if (password.length < 8) return 'পাসওয়ার্ড কমপক্ষে ৮ অক্ষরের হতে হবে।';
-  if (isOnline()) { const bad = passwordProblems(password); if (bad.length) return 'পাসওয়ার্ডে লাগবে: ' + bad.join(', '); }
-  if (isOnline()) return cloudRegister({ name, username, email, password });
+  const ph = phone.trim() ? normalizePhone(phone) : '';
+  if (name.length < 2) return 'Name must be at least 2 characters.';
+  if (!/^[a-z0-9_.]{3,20}$/.test(username)) return 'Username must be 3-20 characters; only a-z, 0-9, _ and . allowed.';
+  if (phone.trim()) { if (!ph) return 'Enter your phone number with country code, e.g. +14155550123.'; }
+  else if (!/^\S+@\S+\.\S+$/.test(email)) return 'Enter a valid email.';
+  const bad = passwordProblems(password); if (bad.length) return 'Password needs: ' + bad.join(', ');
+  if (isOnline()) return cloudRegister({ name, username, email, phone: ph, password });
   const users = Object.values(state.users);
-  if (users.some((u) => u.username === username)) return 'এই ইউজারনেম আগেই নেওয়া হয়েছে।';
-  if (users.some((u) => u.email === email)) return 'এই ইমেইল দিয়ে আগেই অ্যাকাউন্ট আছে।';
+  if (users.some((u) => u.username === username)) return 'This username is already taken.';
+  if (ph ? users.some((u) => u.phone === ph) : users.some((u) => u.email === email)) return 'An account with this email or phone already exists.';
   const hash = await sha(password);
   const id = 'u_' + uid();
   set((s) => {
-    s.users = { ...s.users, [id]: { id, name, username, email, hash, bio: '', avatar: '', cover: '', created: now() } };
+    s.users = { ...s.users, [id]: { id, name, username, email, phone: ph, hash, bio: '', avatar: '', cover: '', created: now() } };
     s.me = id;
     if (!s.demoOn && Object.values(s.users).filter((u) => !u.demo).length === 1) seedDemo(s, id);
   });
@@ -102,9 +103,10 @@ export async function register({ name, username, email, password }) {
 export async function login(emailOrUser, password) {
   const key = emailOrUser.trim().toLowerCase().replace(/^@/, '');
   if (isOnline()) return cloudLogin(key, password);
-  const u = Object.values(state.users).find((x) => !x.demo && !x.cloud && (x.email === key || x.username === key));
-  if (!u) return 'এই ইমেইল/ইউজারনেমে কোনো অ্যাকাউন্ট নেই।';
-  if ((await sha(password)) !== u.hash) return 'পাসওয়ার্ড ভুল।';
+  const ph = looksLikePhone(key) ? normalizePhone(key) : null;
+  const u = Object.values(state.users).find((x) => !x.demo && !x.cloud && (x.email === key || x.username === key || (ph && x.phone === ph)));
+  if (!u) return 'No account found for this email, phone or username.';
+  if ((await sha(password)) !== u.hash) return 'Wrong password.';
   set((s) => { s.me = u.id; });
   return null;
 }
@@ -112,7 +114,7 @@ export const logout = () => { cloudSignOut(); set((s) => { s.me = null; }); };
 
 // ---------- online (Supabase) accounts ----------
 function adopt(profile, email) {
-  if (profile.banned) { cloudSignOut(); set((s) => { s.me = null; }); throw new Error('আপনার অ্যাকাউন্ট সাসপেন্ড করা হয়েছে। অ্যাডমিনের সাথে যোগাযোগ করুন।'); }
+  if (profile.banned) { cloudSignOut(); set((s) => { s.me = null; }); throw new Error('Your account has been suspended. Contact an admin.'); }
   set((s) => {
     const prev = s.users[profile.id] || {};
     s.users = { ...s.users, [profile.id]: cloud.toUser(profile, { email: email || prev.email }) };
@@ -132,7 +134,7 @@ export function refreshFeed() {
     s.users = users;
     s.posts = [...d.posts, ...s.posts.filter((p) => !p.cloud)];
     s.saved = { ...s.saved, [meId]: d.saved };
-  })).catch((e) => errorHandler('ফিড লোড হয়নি: ' + e.message)).finally(() => { refreshing = null; });
+  })).catch((e) => errorHandler('Could not load feed: ' + e.message)).finally(() => { refreshing = null; });
   return refreshing;
 }
 const pendingW = new Set();
@@ -148,7 +150,7 @@ export function refreshSocial() {
     // if something changed locally while we were loading (or a write is still running), this server copy may be stale: ask again later
     if (pendingW.size || snap(state).some((x, i) => x !== before[i])) { stale = true; return; }
     applySocial(d, meId);
-  }).catch((e) => errorHandler('আপডেট আনা যায়নি: ' + e.message)).finally(() => { socialBusy = null; if (stale) { stale = false; setTimeout(refreshSocial, 400); } });
+  }).catch((e) => errorHandler('Could not fetch updates: ' + e.message)).finally(() => { socialBusy = null; if (stale) { stale = false; setTimeout(refreshSocial, 400); } });
   return socialBusy;
 }
 let stale = false;
@@ -167,7 +169,7 @@ function applySocial(d, meId) {
     s.settings = { ...s.settings, [meId]: { ...mySettings(s), ...d.settings } };
     if (s.users[meId]) s.users = { ...s.users, [meId]: { ...s.users[meId], role: d.self.role, banned: d.self.banned } };
   });
-  if (d.self.banned) { cloudSignOut(); set((s) => { s.me = null; }); errorHandler('আপনার অ্যাকাউন্ট সাসপেন্ড করা হয়েছে।'); }
+  if (d.self.banned) { cloudSignOut(); set((s) => { s.me = null; }); errorHandler('Your account has been suspended.'); }
 }
 export async function suggestPeopleOnline() {
   if (!state.users[state.me]?.cloud) return;
@@ -182,7 +184,7 @@ export function refreshMedia() {
     const users = { ...s.users }; d.profiles.forEach((p) => { users[p.id] = cloud.toUser(p, users[p.id]); }); s.users = users;
     s.stories = [...d.stories, ...s.stories.filter((x) => !x.cloud)];
     s.reels = [...d.reels, ...s.reels.filter((x) => !x.cloud)];
-  })).catch((e) => errorHandler('স্টোরি/রিল লোড হয়নি: ' + e.message)).finally(() => { mediaBusy = null; });
+  })).catch((e) => errorHandler('Could not load stories/reels: ' + e.message)).finally(() => { mediaBusy = null; });
   return mediaBusy;
 }
 let chatBusy = null;
@@ -193,7 +195,7 @@ export function refreshChats() {
   chatBusy = Promise.allSettled([...pendingW]).then(() => cloud.loadChats(meId)).then((d) => set((s) => {
     const users = { ...s.users }; d.profiles.forEach((p) => { users[p.id] = cloud.toUser(p, users[p.id]); }); s.users = users;
     s.chats = [...d.chats, ...s.chats.filter((c) => !c.cloud)];
-  })).catch((e) => errorHandler('মেসেজ আনা যায়নি: ' + e.message)).finally(() => { chatBusy = null; });
+  })).catch((e) => errorHandler('Could not fetch messages: ' + e.message)).finally(() => { chatBusy = null; });
   return chatBusy;
 }
 let groupBusy = null;
@@ -205,15 +207,15 @@ export function refreshGroups() {
     const users = { ...s.users }; d.profiles.forEach((p) => { users[p.id] = cloud.toUser(p, users[p.id]); }); s.users = users;
     s.groups = [...d.groups, ...s.groups.filter((g) => !g.cloud)];
     s.pages = [...d.pages, ...s.pages.filter((p) => !p.cloud)];
-  })).catch((e) => errorHandler('গ্রুপ/পেজ আনা যায়নি: ' + e.message)).finally(() => { groupBusy = null; });
+  })).catch((e) => errorHandler('Could not fetch groups/pages: ' + e.message)).finally(() => { groupBusy = null; });
   return groupBusy;
 }
 export const refreshAll = () => Promise.all([refreshFeed(), refreshSocial(), refreshMedia(), refreshChats(), refreshGroups()]);
-const grpErr = (m) => (/only friends|you can only add friends/.test(m) ? 'শুধু আপনার বন্ধুদের যোগ করা যায়।' : /only the group owner/.test(m) ? 'শুধু গ্রুপের মালিক/অ্যাডমিন সদস্য যোগ করতে পারেন।' : m);
+const grpErr = (m) => (/only friends|you can only add friends/.test(m) ? 'You can only add your friends.' : /only the group owner/.test(m) ? 'Only the group owner/admin can add members.' : m);
 export async function createGroupOnline(name, desc, privacy) { try { await cloud.makeGroup(state.me, name, desc, privacy); await refreshGroups(); return null; } catch (e) { return e.message; } }
 export async function createPageOnline(name, kind, desc) { try { await cloud.makePage(state.me, name, kind, desc); await refreshGroups(); return null; } catch (e) { return e.message; } }
 export async function addGroupMemberOnline(groupId, userId) { try { await cloud.addGroupMember(groupId, userId); await refreshGroups(); return null; } catch (e) { return grpErr(e.message); } }
-const chatErr = (m) => (/only friends/.test(m) ? 'এই ব্যবহারকারী শুধু বন্ধুদের মেসেজ নেন।' : /blocked/.test(m) ? 'ব্লক থাকায় মেসেজ পাঠানো যাবে না।' : /you can only add friends/.test(m) ? 'গ্রুপে শুধু বন্ধুদের যোগ করা যায়।' : m);
+const chatErr = (m) => (/only friends/.test(m) ? 'This user only accepts messages from friends.' : /blocked/.test(m) ? 'Cannot send message because of a block.' : /you can only add friends/.test(m) ? 'Only friends can be added to a group.' : m);
 export async function openChatOnline(otherId) {
   try { const id = await cloud.startChat(otherId); await refreshChats(); return { id }; } catch (e) { return { error: chatErr(e.message) }; }
 }
@@ -239,18 +241,24 @@ export async function searchPeopleOnline(term) {
 }
 export const sameWorld = (s, u) => !!u?.cloud === !!s.users[s.me]?.cloud;
 export const isCloudMe = (s = state) => !!s.users[s.me]?.cloud;
-async function cloudRegister({ name, username, email, password }) {
+let pendingPhone = null;
+async function cloudRegister({ name, username, email, phone, password }) {
   try {
-    if (!(await usernameAvailable(username))) return 'এই ইউজারনেম আগেই নেওয়া হয়েছে।';
-    const r = await cloudSignUp({ email, password, name, username });
-    if (r.needsConfirm) return { info: 'আপনার ইমেইলে একটি ভেরিফিকেশন লিংক পাঠানো হয়েছে। লিংকে ক্লিক করে ভেরিফাই করুন, তারপর লগইন করুন।' };
+    if (!(await usernameAvailable(username))) return 'This username is already taken.';
+    const r = await cloudSignUp({ email, phone, password, name, username });
+    if (r.needsOtp) { pendingPhone = phone; return { otp: phone }; }
+    if (r.needsConfirm) return { info: 'A verification link has been sent to your email. Click it to verify, then log in.' };
     const p = await fetchMyProfile();
-    if (!p) return 'অ্যাকাউন্ট হয়েছে কিন্তু প্রোফাইল পাওয়া যায়নি। schema.sql চালানো হয়েছে কিনা দেখুন।';
+    if (!p) return 'Account created but profile not found. Check that schema.sql has been run.';
     adopt(p, email); return null;
   } catch (e) { return e.message; }
 }
+// Step 2 of phone sign-up / phone recovery: the SMS code the user types in
+export async function confirmPhoneCode(code, phone = pendingPhone) {
+  try { await verifyPhoneOtp(phone, code); pendingPhone = null; return finishCloudLogin(phone); } catch (e) { return e.message; }
+}
+export async function resendPhoneCode(phone = pendingPhone) { try { await resendPhoneOtp(phone); return null; } catch (e) { return e.message; } }
 async function cloudLogin(key, password) {
-  if (!key.includes('@')) return 'অনলাইন মোডে ইমেইল দিয়ে লগইন করুন।';
   try {
     const r = await cloudSignIn(key, password);
     if (r?.mfa) { pendingMfa = { ...r.mfa, email: key }; return { mfa: true }; }
@@ -259,15 +267,15 @@ async function cloudLogin(key, password) {
 }
 let pendingMfa = null;
 export async function loginMfa(code) {
-  if (!pendingMfa) return 'আবার লগইন করুন।';
+  if (!pendingMfa) return 'Please log in again.';
   try { await mfaLoginVerify(pendingMfa.factorId, pendingMfa.token, code); const k = pendingMfa.email; pendingMfa = null; return finishCloudLogin(k); }
-  catch (e) { return /expired|invalid|incorrect/i.test(e.message) ? 'কোড ভুল বা মেয়াদ শেষ। আবার চেষ্টা করুন।' : e.message; }
+  catch (e) { return /expired|invalid|incorrect/i.test(e.message) ? 'Wrong or expired code. Try again.' : e.message; }
 }
 export const cancelMfa = () => { pendingMfa = null; };
 async function finishCloudLogin(key) {
   try {
     const p = await fetchMyProfile();
-    if (!p) return 'লগইন হয়েছে কিন্তু প্রোফাইল পাওয়া যায়নি। schema.sql চালানো হয়েছে কিনা দেখুন।';
+    if (!p) return 'Logged in but profile not found. Check that schema.sql has been run.';
     adopt(p, key); return null;
   } catch (e) { return e.message; }
 }
@@ -308,7 +316,7 @@ function seedDemo(s, meId) {
   s.notifs.push(
     { id: uid(), to: meId, type: 'friend_request', from: t, time: now() - 5 * 60000, read: false },
     { id: uid(), to: meId, type: 'friend_request', from: sa, time: now() - 2 * 3600000, read: false },
-    { id: uid(), to: meId, type: 'system', from: '', text: 'FYNZA-তে স্বাগতম! এটি ডেমো তথ্য — সেটিংস থেকে মুছে ফেলা যায়।', time: now() - 60000, read: false },
+    { id: uid(), to: meId, type: 'system', from: '', text: 'Welcome to FYNZA! This is demo data - you can delete it from Settings.', time: now() - 60000, read: false },
   );
   s.groups.push(
     { id: uid(), name: 'Fynza Community', desc: 'Welcome to the FYNZA community.', privacy: 'public', members: [a, t, sa, r, n], owner: a, demo: true },
@@ -355,7 +363,7 @@ export async function updateProfile(patch) {
 }
 export function updateSettings(patch) {
   set((s) => { s.settings = { ...s.settings, [s.me]: { ...mySettings(s), ...patch } }; });
-  if (state.users[state.me]?.cloud) track(cloud.saveSettings(state.me, patch)).catch((e) => { errorHandler('সেটিং সেভ হয়নি: ' + e.message); refreshSocial(); });
+  if (state.users[state.me]?.cloud) track(cloud.saveSettings(state.me, patch)).catch((e) => { errorHandler('Could not save setting: ' + e.message); refreshSocial(); });
 }
 
 // ---------- profile visitors ----------
@@ -380,11 +388,11 @@ export function visitsOfMe(s = state) {
 }
 export const removeVisit = (id) => {
   set((s) => { s.visits = s.visits.filter((v) => v.id !== id); });
-  if (state.users[state.me]?.cloud) track(cloud.deleteVisit(id)).catch((e) => { errorHandler('মোছা যায়নি: ' + e.message); refreshSocial(); });
+  if (state.users[state.me]?.cloud) track(cloud.deleteVisit(id)).catch((e) => { errorHandler('Could not delete: ' + e.message); refreshSocial(); });
 };
 export const clearVisits = () => {
   set((s) => { s.visits = s.visits.filter((v) => v.profile !== s.me); });
-  if (state.users[state.me]?.cloud) track(cloud.clearVisitsOnline(state.me)).catch((e) => { errorHandler('মোছা যায়নি: ' + e.message); refreshSocial(); });
+  if (state.users[state.me]?.cloud) track(cloud.clearVisitsOnline(state.me)).catch((e) => { errorHandler('Could not delete: ' + e.message); refreshSocial(); });
 };
 
 // ---------- friends / follow / block ----------
@@ -392,7 +400,7 @@ const fail = (msg) => (e) => { errorHandler(msg + e.message); refreshSocial(); }
 export function sendRequest(to) {
   if (state.users[to]?.cloud) {
     set((s) => { if (!requestBetween(s, s.me, to) && !areFriends(s, s.me, to)) s.requests = [...s.requests, { from: s.me, to, time: now() }]; });
-    return track(cloud.requestFriend(state.me, to)).catch(fail('অনুরোধ যায়নি: '));
+    return track(cloud.requestFriend(state.me, to)).catch(fail('Request failed: '));
   }
   set((s) => {
     if (requestBetween(s, s.me, to) || areFriends(s, s.me, to)) return;
@@ -407,7 +415,7 @@ export function acceptRequest(from) {
       if (!areFriends(s, from, s.me)) s.friends = [...s.friends, [from, s.me]];
       s.notifs = s.notifs.filter((n) => !(n.type === 'friend_request' && n.from === from));
     });
-    return track(cloud.acceptFriend(state.me, from)).catch(fail('Confirm হয়নি: '));
+    return track(cloud.acceptFriend(state.me, from)).catch(fail('Could not confirm: '));
   }
   set((s) => {
     s.requests = s.requests.filter((r) => !(r.from === from && r.to === s.me));
@@ -418,7 +426,7 @@ export function acceptRequest(from) {
 export function declineRequest(from) {
   if (state.users[from]?.cloud) {
     set((s) => { s.requests = s.requests.filter((r) => !((r.from === from && r.to === s.me) || (r.from === s.me && r.to === from))); s.notifs = s.notifs.filter((n) => !(n.type === 'friend_request' && n.from === from)); });
-    return track(cloud.removeFriendship(state.me, from)).catch(fail('বাতিল হয়নি: '));
+    return track(cloud.removeFriendship(state.me, from)).catch(fail('Could not cancel: '));
   }
   set((s) => {
     s.requests = s.requests.filter((r) => !((r.from === from && r.to === s.me) || (r.from === s.me && r.to === from)));
@@ -426,13 +434,13 @@ export function declineRequest(from) {
   });
 }
 export const unfriend = (id) => {
-  if (state.users[id]?.cloud) track(cloud.removeFriendship(state.me, id)).catch(fail('Unfriend হয়নি: '));
+  if (state.users[id]?.cloud) track(cloud.removeFriendship(state.me, id)).catch(fail('Could not unfriend: '));
   localUnfriend(id);
 };
 const localUnfriend = (id) => set((s) => { s.friends = s.friends.filter(([x, y]) => !((x === id && y === s.me) || (y === id && x === s.me))); });
 export const toggleFollow = (id) => {
   const on = !state.follows.some(([a, b]) => a === state.me && b === id);
-  if (state.users[id]?.cloud) track(cloud.followOnline(state.me, id, on)).catch(fail('Follow হয়নি: '));
+  if (state.users[id]?.cloud) track(cloud.followOnline(state.me, id, on)).catch(fail('Could not follow: '));
   localFollow(id);
 };
 const localFollow = (id) => set((s) => {
@@ -440,7 +448,7 @@ const localFollow = (id) => set((s) => {
   s.follows = has ? s.follows.filter(([a, b]) => !(a === s.me && b === id)) : [...s.follows, [s.me, id]];
 });
 export const blockUser = (id) => {
-  if (state.users[id]?.cloud) cloud.addBlockOnline(state.me, id).catch((e) => { errorHandler('ব্লক সেভ হয়নি: ' + e.message); });
+  if (state.users[id]?.cloud) cloud.addBlockOnline(state.me, id).catch((e) => { errorHandler('Could not save block: ' + e.message); });
   localBlock(id);
 };
 const localBlock = (id) => set((s) => {
@@ -449,12 +457,12 @@ const localBlock = (id) => set((s) => {
   s.requests = s.requests.filter((r) => !((r.from === id && r.to === s.me) || (r.from === s.me && r.to === id)));
 });
 export const unblockUser = (id) => {
-  if (state.users[id]?.cloud) cloud.removeBlockOnline(state.me, id).catch((e) => errorHandler('আনব্লক সেভ হয়নি: ' + e.message));
+  if (state.users[id]?.cloud) cloud.removeBlockOnline(state.me, id).catch((e) => errorHandler('Could not save unblock: ' + e.message));
   set((s) => { s.blocks = s.blocks.filter(([a, b]) => !(a === s.me && b === id)); });
 };
 export const report = (kind, target, reason) => {
   const online = kind === 'post' ? state.posts.find((p) => p.id === target)?.cloud : kind === 'message' ? state.chats.some((c) => c.cloud && c.msgs.some((m) => m.id === target)) : state.users[target]?.cloud;
-  if (online) { cloud.sendReport(state.me, kind, target, reason).catch((e) => errorHandler('রিপোর্ট যায়নি: ' + e.message)); return; }
+  if (online) { cloud.sendReport(state.me, kind, target, reason).catch((e) => errorHandler('Could not send report: ' + e.message)); return; }
   localReport(kind, target, reason);
 };
 const localReport = (kind, target, reason) => set((s) => { s.reports = [...s.reports, { id: uid(), by: s.me, kind, target, reason, time: now() }]; });
@@ -469,7 +477,7 @@ export async function addPostOnline(args) {
 export const deletePost = (id) => {
   const p = state.posts.find((x) => x.id === id);
   set((s) => { s.posts = s.posts.filter((x) => x.id !== id || x.author !== s.me); });
-  if (p?.cloud && p.author === state.me) cloud.deletePostOnline(p).catch((e) => { errorHandler('মুছতে পারেনি: ' + e.message); refreshFeed(); });
+  if (p?.cloud && p.author === state.me) cloud.deletePostOnline(p).catch((e) => { errorHandler('Could not delete: ' + e.message); refreshFeed(); });
 };
 export function react(postId, type) {
   set((s) => {
@@ -482,11 +490,11 @@ export function react(postId, type) {
     });
   });
   const p = state.posts.find((x) => x.id === postId);
-  if (p?.cloud) cloud.setReaction(state.me, postId, p.reactions[state.me] || null).catch((e) => { errorHandler('রিঅ্যাকশন সেভ হয়নি: ' + e.message); refreshFeed(); });
+  if (p?.cloud) cloud.setReaction(state.me, postId, p.reactions[state.me] || null).catch((e) => { errorHandler('Could not save reaction: ' + e.message); refreshFeed(); });
 }
 export function addComment(postId, text, parentId) {
   if (state.posts.find((p) => p.id === postId)?.cloud) {
-    return cloud.createComment(state.me, postId, text, parentId).then(() => refreshFeed()).catch((e) => errorHandler('কমেন্ট হয়নি: ' + e.message));
+    return cloud.createComment(state.me, postId, text, parentId).then(() => refreshFeed()).catch((e) => errorHandler('Could not post comment: ' + e.message));
   }
   set((s) => {
     s.posts = s.posts.map((p) => {
@@ -500,7 +508,7 @@ export function addComment(postId, text, parentId) {
 }
 export function sharePost(postId, text) {
   if (state.posts.find((p) => p.id === postId)?.cloud) {
-    return cloud.createPost(state.me, { text: text || '', sharedId: postId, aud: mySettings(state).postAudience }).then(() => refreshFeed()).catch((e) => errorHandler('শেয়ার হয়নি: ' + e.message));
+    return cloud.createPost(state.me, { text: text || '', sharedId: postId, aud: mySettings(state).postAudience }).then(() => refreshFeed()).catch((e) => errorHandler('Could not share: ' + e.message));
   }
   set((s) => {
     const o = s.posts.find((p) => p.id === postId);
@@ -515,7 +523,7 @@ export const toggleSave = (postId) => {
     s.saved = { ...s.saved, [s.me]: cur.includes(postId) ? cur.filter((x) => x !== postId) : [...cur, postId] };
   });
   if (state.posts.find((p) => p.id === postId)?.cloud) {
-    cloud.setSaved(state.me, postId, (state.saved[state.me] || []).includes(postId)).catch((e) => { errorHandler('সেভ হয়নি: ' + e.message); refreshFeed(); });
+    cloud.setSaved(state.me, postId, (state.saved[state.me] || []).includes(postId)).catch((e) => { errorHandler('Could not save: ' + e.message); refreshFeed(); });
   }
 };
 
@@ -524,7 +532,7 @@ export async function addStoryOnline(a) { try { await cloud.createStory(state.me
 export const deleteStory = (id) => {
   const st = state.stories.find((x) => x.id === id);
   set((s) => { s.stories = s.stories.filter((x) => x.id !== id || x.author !== s.me); });
-  if (st?.cloud && st.author === state.me) track(cloud.deleteStoryOnline(st)).catch((e) => { errorHandler('মোছা যায়নি: ' + e.message); refreshMedia(); });
+  if (st?.cloud && st.author === state.me) track(cloud.deleteStoryOnline(st)).catch((e) => { errorHandler('Could not delete: ' + e.message); refreshMedia(); });
 };
 export const addStory = ({ text, img, bg }) => set((s) => { s.stories = [{ id: uid(), author: s.me, text, img, bg, time: now() }, ...s.stories]; });
 export const liveStories = (s = state) => s.stories.filter((x) => now() - x.time < DAY);
@@ -534,17 +542,32 @@ export async function addReelOnline(file, caption) { try { await cloud.createRee
 export const deleteReel = (id) => {
   const r = state.reels.find((x) => x.id === id);
   set((s) => { s.reels = s.reels.filter((x) => x.id !== id || x.author !== s.me); });
-  if (r?.cloud && r.author === state.me) cloud.deleteReelOnline(r).catch((e) => { errorHandler('মোছা যায়নি: ' + e.message); refreshMedia(); });
+  if (r?.cloud && r.author === state.me) cloud.deleteReelOnline(r).catch((e) => { errorHandler('Could not delete: ' + e.message); refreshMedia(); });
 };
-export const addReel = (videoKey, caption) => set((s) => { s.reels = [{ id: uid(), author: s.me, videoKey, caption, time: now(), likes: [] }, ...s.reels]; });
-export const toggleReelLike = (id) => {
-  const r = state.reels.find((x) => x.id === id);
-  if (r?.cloud) { const on = !r.likes.includes(state.me); track(cloud.setReelLike(state.me, id, on)).catch((e) => { errorHandler('লাইক হয়নি: ' + e.message); refreshMedia(); }); }
-  localReelLike(id);
+export const addReel = (videoKey, caption) => set((s) => { s.reels = [{ id: uid(), author: s.me, videoKey, caption, time: now(), likes: [], reactions: {}, comments: [], shares: 0 }, ...s.reels]; });
+export const reactReel = (id, type) => {
+  const r = state.reels.find((x) => x.id === id); if (!r) return;
+  const next = r.reactions?.[state.me] === type ? null : type; // tapping the same reaction again removes it
+  set((s) => { s.reels = s.reels.map((x) => { if (x.id !== id) return x; const rx = { ...(x.reactions || {}) }; if (next) rx[s.me] = next; else delete rx[s.me]; return { ...x, reactions: rx, likes: Object.keys(rx) }; }); });
+  if (r.cloud) track(cloud.setReelReaction(state.me, id, next)).catch((e) => { errorHandler('Could not react: ' + e.message); refreshMedia(); });
 };
-const localReelLike = (id) => set((s) => {
-  s.reels = s.reels.map((r) => (r.id !== id ? r : { ...r, likes: r.likes.includes(s.me) ? r.likes.filter((x) => x !== s.me) : [...r.likes, s.me] }));
-});
+export const toggleReelLike = (id) => reactReel(id, 'like');
+export function addReelComment(id, text, parentId) {
+  const r = state.reels.find((x) => x.id === id); if (!r || !text.trim()) return;
+  if (r.cloud) return track(cloud.createReelComment(state.me, id, text.trim(), parentId)).then(() => refreshMedia()).catch((e) => errorHandler('Could not comment: ' + e.message));
+  set((s) => { s.reels = s.reels.map((x) => { if (x.id !== id) return x; const c = { id: uid(), author: s.me, text: text.trim(), time: now(), replies: [] }; const list = [...(x.comments || [])];
+    if (parentId) return { ...x, comments: list.map((k) => (k.id === parentId ? { ...k, replies: [...k.replies, c] } : k)) }; return { ...x, comments: [...list, c] }; }); });
+}
+export function deleteReelComment(id, cid) {
+  const r = state.reels.find((x) => x.id === id); if (!r) return;
+  set((s) => { s.reels = s.reels.map((x) => (x.id !== id ? x : { ...x, comments: (x.comments || []).filter((c) => c.id !== cid).map((c) => ({ ...c, replies: c.replies.filter((k) => k.id !== cid) })) })); });
+  if (r.cloud) cloud.deleteReelCommentOnline(cid).catch((e) => { errorHandler('Could not delete: ' + e.message); refreshMedia(); });
+}
+export function countReelShare(id) {
+  const r = state.reels.find((x) => x.id === id); if (!r) return;
+  set((s) => { s.reels = s.reels.map((x) => (x.id === id ? { ...x, shares: (x.shares || 0) + 1 } : x)); });
+  if (r.cloud) cloud.recordReelShare(state.me, id).catch(() => {});
+}
 
 // ---------- chat ----------
 export function openChat(otherId) {
@@ -573,7 +596,7 @@ export function sendRich(chatId, o) {
   const kind = o.kind || 'text';
   patchChat(chatId, (x) => ({ ...x, msgs: [...x.msgs, { id: tmp, from: state.me, text: o.text || '', kind, url: local, img: kind === 'image' ? local : '', fileName: o.fileName || '', duration: o.duration || 0, reply: o.replyTo || '', rx: {}, time: now(), sending: true }] }));
   return track(cloud.sendChatMessage(state.me, chatId, o)).catch((e) => {
-    errorHandler('মেসেজ যায়নি: ' + chatErr(e.message));
+    errorHandler('Could not send message: ' + chatErr(e.message));
     patchChat(chatId, (x) => ({ ...x, msgs: x.msgs.filter((m) => m.id !== tmp) }));
   }).finally(() => refreshChats());
 }
@@ -581,15 +604,15 @@ export function reactToMessage(chatId, mid, emoji) {
   const mine = state.me; const cur = state.chats.find((c) => c.id === chatId)?.msgs.find((m) => m.id === mid)?.rx?.[mine];
   const next = cur === emoji ? '' : emoji;
   patchMsg(chatId, mid, (m) => { const rx = { ...m.rx }; if (next) rx[mine] = next; else delete rx[mine]; return { ...m, rx }; });
-  return track(cloud.reactMessage(mine, mid, next)).catch((e) => { errorHandler('রিঅ্যাকশন হয়নি: ' + chatErr(e.message)); refreshChats(); });
+  return track(cloud.reactMessage(mine, mid, next)).catch((e) => { errorHandler('Could not react: ' + chatErr(e.message)); refreshChats(); });
 }
 export function editMessageOnline(chatId, mid, text) {
   patchMsg(chatId, mid, (m) => ({ ...m, text, edited: true }));
-  return track(cloud.editMessage(mid, text)).catch((e) => { errorHandler('এডিট হয়নি: ' + chatErr(e.message)); refreshChats(); });
+  return track(cloud.editMessage(mid, text)).catch((e) => { errorHandler('Could not edit: ' + chatErr(e.message)); refreshChats(); });
 }
 export function deleteMessageOnline(chatId, mid) {
   patchMsg(chatId, mid, (m) => ({ ...m, deleted: true, text: '', url: '', img: '', rx: {} }));
-  return track(cloud.deleteMessage(mid)).catch((e) => { errorHandler('ডিলিট হয়নি: ' + chatErr(e.message)); refreshChats(); });
+  return track(cloud.deleteMessage(mid)).catch((e) => { errorHandler('Could not delete: ' + chatErr(e.message)); refreshChats(); });
 }
 export function markChatRead(chatId) {
   const c = state.chats.find((x) => x.id === chatId);
@@ -609,8 +632,8 @@ export const toggleGroup = (id) => {
   const g = state.groups.find((x) => x.id === id);
   if (g?.cloud) {
     const joined = g.members.includes(state.me);
-    if (joined && g.owner === state.me) { errorHandler('মালিক গ্রুপ ছাড়তে পারেন না।'); return; }
-    return track(joined ? cloud.leaveGroupOnline(state.me, id) : cloud.joinGroupOnline(state.me, id)).then(() => refreshGroups()).catch((e) => { errorHandler('হয়নি: ' + e.message); refreshGroups(); });
+    if (joined && g.owner === state.me) { errorHandler('The owner cannot leave the group.'); return; }
+    return track(joined ? cloud.leaveGroupOnline(state.me, id) : cloud.joinGroupOnline(state.me, id)).then(() => refreshGroups()).catch((e) => { errorHandler('Failed: ' + e.message); refreshGroups(); });
   }
   localToggleGroup(id);
 };
@@ -623,7 +646,7 @@ export const togglePage = (id) => {
   if (p?.cloud) {
     const on = !p.followers.includes(state.me);
     set((s) => { s.pages = s.pages.map((x) => (x.id !== id ? x : { ...x, followers: on ? [...x.followers, s.me] : x.followers.filter((u) => u !== s.me) })); });
-    return track(cloud.followPageOnline(state.me, id, on)).catch((e) => { errorHandler('Follow হয়নি: ' + e.message); refreshGroups(); });
+    return track(cloud.followPageOnline(state.me, id, on)).catch((e) => { errorHandler('Could not follow: ' + e.message); refreshGroups(); });
   }
   localTogglePage(id);
 };

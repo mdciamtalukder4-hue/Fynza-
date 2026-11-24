@@ -57,20 +57,20 @@ function StoryCreate({ onClose }) {
   const [busy, setBusy] = useState(false);
   const cloudMe = () => me(s0).cloud;
   const post = async () => {
-    if (!text.trim() && !img) return toast('লেখা বা ছবি দিন।');
+    if (!text.trim() && !img) return toast('Add some text or a photo.');
     setBusy(true);
     const err = cloudMe() ? await addStoryOnline({ text: text.trim(), img, bg }) : (addStory({ text: text.trim(), img, bg }), null);
     setBusy(false);
-    if (err) return toast('স্টোরি হয়নি: ' + err);
-    toast('স্টোরি পোস্ট হয়েছে — ২৪ ঘণ্টা থাকবে।'); onClose();
+    if (err) return toast('Story failed: ' + err);
+    toast('Story posted — it will stay for 24 hours.'); onClose();
   };
   return (
     <Sheet title="Create Story" onClose={onClose}>
-      <div className="story-preview" style={{ background: img ? `center/cover url(${img})` : bg }}>{text || 'আপনার লেখা এখানে দেখাবে'}</div>
-      <textarea className="input" rows={2} maxLength={140} placeholder="কিছু লিখুন…" value={text} onChange={(e) => setText(e.target.value)} aria-label="Story text" />
+      <div className="story-preview" style={{ background: img ? `center/cover url(${img})` : bg }}>{text || 'Your text will appear here'}</div>
+      <textarea className="input" rows={2} maxLength={140} placeholder="Write something…" value={text} onChange={(e) => setText(e.target.value)} aria-label="Story text" />
       <div className="row gap">
         {BGS.map((b) => <button key={b} aria-label="Background" className={'swatch' + (bg === b && !img ? ' on' : '')} style={{ background: b }} onClick={() => { setBg(b); setImg(''); }} />)}
-        <button className="btn ghost sm" onClick={() => file.current.click()}><IoImage /> ছবি</button>
+        <button className="btn ghost sm" onClick={() => file.current.click()}><IoImage /> Photo</button>
         <input ref={file} type="file" accept="image/*" hidden onChange={async (e) => { const f = e.target.files[0]; if (f) setImg(await compressImage(f, 800)); }} />
       </div>
       <button className="btn primary big" disabled={busy} onClick={post}>{busy ? 'Uploading…' : 'Share to Story'}</button>
@@ -87,7 +87,7 @@ function StoryView({ st, onClose }) {
       <div className="story-bar"><i /></div>
       <div className="story-who"><Avatar user={a} size={36} /><b>{a?.name}</b><small>{timeAgo(st.time)}</small></div>
       {st.text && <p className="story-text">{st.text}</p>}
-      {st.author === s.me && <button className="btn ghost sm story-del" onClick={(e) => { e.stopPropagation(); deleteStory(st.id); onClose(); toast('স্টোরি মুছে ফেলা হয়েছে।'); }}>Delete</button>}
+      {st.author === s.me && <button className="btn ghost sm story-del" onClick={(e) => { e.stopPropagation(); deleteStory(st.id); onClose(); toast('Story deleted.'); }}>Delete</button>}
     </div>
   );
 }
@@ -108,15 +108,15 @@ export function Composer() {
     try {
       if (user.cloud) {
         const err = await addPostOnline({ text: text.trim(), imgDataUrl: img, videoFile: vid, aud });
-        if (err) { toast('পোস্ট হয়নি: ' + err); setBusy(false); return; }
-        setText(''); setImg(''); setVid(null); toast('পোস্ট অনলাইনে হয়েছে।');
+        if (err) { toast('Post failed: ' + err); setBusy(false); return; }
+        setText(''); setImg(''); setVid(null); toast('Post published online.');
       } else {
         const videoKey = vid ? await saveVideo(vid) : '';
         addPost({ text: text.trim(), img, videoKey, aud });
-        setText(''); setImg(''); setVid(null); toast('পোস্ট হয়েছে।');
+        setText(''); setImg(''); setVid(null); toast('Post published.');
         if (saveError) toast(saveError);
       }
-    } catch (e) { toast('পোস্ট করা যায়নি। আবার চেষ্টা করুন।'); }
+    } catch (e) { toast('Could not post. Please try again.'); }
     setBusy(false);
   };
   return (
@@ -131,7 +131,7 @@ export function Composer() {
         <button className="btn ghost sm" onClick={() => imgRef.current.click()}><IoImage color="#16A34A" /> Photo</button>
         <button className="btn ghost sm" onClick={() => vidRef.current.click()}><IoVideocam color="#DB2777" /> Video</button>
         <input ref={imgRef} type="file" accept="image/*" hidden onChange={async (e) => { const f = e.target.files[0]; if (f) setImg(await compressImage(f)); e.target.value = ''; }} />
-        <input ref={vidRef} type="file" accept="video/*" hidden onChange={(e) => { const f = e.target.files[0]; if (f) { if (f.size > (user.cloud ? 45e6 : 60e6)) toast('ভিডিও ' + (user.cloud ? '৪৫' : '৬০') + 'MB-এর কম হতে হবে।'); else setVid(f); } e.target.value = ''; }} />
+        <input ref={vidRef} type="file" accept="video/*" hidden onChange={(e) => { const f = e.target.files[0]; if (f) { if (f.size > (user.cloud ? 45e6 : 60e6)) toast('Video must be under ' + (user.cloud ? '45' : '60') + ' MB.'); else setVid(f); } e.target.value = ''; }} />
         <select className="aud" value={aud} onChange={(e) => setAud(e.target.value)} aria-label="Audience">
           <option value="public">🌐 Public</option><option value="friends">👥 Friends</option><option value="me">🔒 Only me</option>
         </select>
@@ -164,7 +164,7 @@ function Comments({ post }) {
         <input className="input" aria-label="Write a comment" placeholder={reply ? 'Write a reply…' : 'Write a comment…'} value={t} onChange={(e) => setT(e.target.value)} />
         <button className="icon-btn send" aria-label="Send comment"><IoSend size={20} /></button>
       </form>
-      {reply && <small className="muted">উত্তর দিচ্ছেন · <button className="link-btn" onClick={() => setReply(null)}>বাতিল</button></small>}
+      {reply && <small className="muted">Replying · <button className="link-btn" onClick={() => setReply(null)}>Cancel</button></small>}
     </div>
   );
 }
@@ -200,7 +200,7 @@ export function PostCard({ post, embedded }) {
       {post.img && <img className="post-img" src={post.img} alt="" loading="lazy" />}
       {post.videoKey && <Video vkey={post.videoKey} className="post-video" />}
       {post.videoUrl && <Video url={post.videoUrl} className="post-video" />}
-      {post.shareOf && (orig && canSee(s, orig) ? <PostCard post={orig} embedded /> : <div className="muted pad">এই পোস্টটি আর পাওয়া যাচ্ছে না।</div>)}
+      {post.shareOf && (orig && canSee(s, orig) ? <PostCard post={orig} embedded /> : <div className="muted pad">This post is no longer available.</div>)}
       {!embedded && (
         <>
           <div className="post-stats">
@@ -220,7 +220,7 @@ export function PostCard({ post, embedded }) {
             </div>
             <button onClick={() => setOpen(!open)}><IoChatbubbleOutline size={20} /> Comment</button>
             <button onClick={() => setShare(true)}><IoShareSocialOutline size={20} /> Share</button>
-            <button className={saved ? 'on' : ''} onClick={() => { toggleSave(post.id); toast(saved ? 'সেভ থেকে সরানো হয়েছে।' : 'সেভ করা হয়েছে।'); }}>{saved ? <IoBookmark size={20} /> : <IoBookmarkOutline size={20} />} Save</button>
+            <button className={saved ? 'on' : ''} onClick={() => { toggleSave(post.id); toast(saved ? 'Removed from saved.' : 'Saved.'); }}>{saved ? <IoBookmark size={20} /> : <IoBookmarkOutline size={20} />} Save</button>
           </div>
           {open && <Comments post={post} />}
         </>
@@ -228,11 +228,11 @@ export function PostCard({ post, embedded }) {
       {menu && (
         <Sheet title="Post options" onClose={() => setMenu(false)}>
           {post.author === user.id ? (
-            <button className="menu-item danger" onClick={() => { deletePost(post.id); setMenu(false); toast('পোস্ট মুছে ফেলা হয়েছে।'); }}>Delete post</button>
+            <button className="menu-item danger" onClick={() => { deletePost(post.id); setMenu(false); toast('Post deleted.'); }}>Delete post</button>
           ) : (
             <>
               <button className="menu-item" onClick={() => { setMenu(false); askReport('post', post.id); }}>Report post</button>
-              <button className="menu-item danger" onClick={() => { blockUser(post.author); setMenu(false); toast(a?.name + ' ব্লক করা হয়েছে।'); }}>Block {a?.name}</button>
+              <button className="menu-item danger" onClick={() => { blockUser(post.author); setMenu(false); toast(a?.name + ' blocked.'); }}>Block {a?.name}</button>
             </>
           )}
         </Sheet>
@@ -246,8 +246,8 @@ function ShareSheet({ post, onClose }) {
   const [t, setT] = useState('');
   return (
     <Sheet title="Share post" onClose={onClose}>
-      <textarea className="input" rows={2} placeholder="কিছু বলুন (ঐচ্ছিক)…" value={t} onChange={(e) => setT(e.target.value)} />
-      <button className="btn primary big" onClick={() => { sharePost(post.shareOf || post.id, t.trim()); onClose(); toast('আপনার ফিডে শেয়ার হয়েছে।'); }}>Share now</button>
+      <textarea className="input" rows={2} placeholder="Say something (optional)…" value={t} onChange={(e) => setT(e.target.value)} />
+      <button className="btn primary big" onClick={() => { sharePost(post.shareOf || post.id, t.trim()); onClose(); toast('Shared to your feed.'); }}>Share now</button>
     </Sheet>
   );
 }
@@ -258,10 +258,10 @@ export function Feed() {
   const posts = s.posts.filter((p) => canSee(s, p) && !p.groupId);
   return (
     <div className="stack">
-      {me(s).cloud ? <div className="local-note">☁️ অনলাইন মোড: পোস্ট, লাইক, কমেন্ট, সেভ, স্টোরি — সব ডাটাবেসে জমা হয়।<button className="btn ghost sm" onClick={() => refreshFeed()}>↻ Refresh</button></div> : null}
+      {me(s).cloud ? <div className="local-note">☁️ Online mode: posts, likes, comments, saves and stories are all stored in the database.<button className="btn ghost sm" onClick={() => refreshFeed()}>↻ Refresh</button></div> : null}
       <Stories />
       <Composer />
-      {posts.length === 0 && <Empty title="ফিড এখনও খালি" text="উপরে প্রথম পোস্টটি লিখুন, অথবা বন্ধু খুঁজুন।"><a className="btn primary sm" href="#/friends">Find friends</a></Empty>}
+      {posts.length === 0 && <Empty title="Your feed is empty" text="Write your first post above, or find friends."><a className="btn primary sm" href="#/friends">Find friends</a></Empty>}
       {me(s).cloud && <SponsoredSlot country={me(s).country} />}
       {posts.map((p) => <PostCard key={p.id} post={p} />)}
     </div>
@@ -277,15 +277,15 @@ export function SideRail() {
   return (
     <div className="stack">
       <section className="card pad"><b>Friend requests</b>
-        {reqs.length === 0 && <p className="muted">কোনো নতুন অনুরোধ নেই।</p>}
+        {reqs.length === 0 && <p className="muted">No new requests.</p>}
         {reqs.map((r) => { const u = s.users[r.from]; return u && (
           <div className="person" key={r.from}><Avatar user={u} size={40} /><div className="grow"><a className="name" href={'#/profile/' + u.id}>{u.name}</a>
             <div className="row gap"><button className="btn primary sm" onClick={() => acceptRequest(u.id)}>Confirm</button><button className="btn ghost sm" onClick={() => declineRequest(u.id)}>Delete</button></div></div></div>); })}
       </section>
       <section className="card pad"><b>People you may know</b>
-        {sug.length === 0 && <p className="muted">এখন কোনো সাজেশন নেই।</p>}
+        {sug.length === 0 && <p className="muted">No suggestions right now.</p>}
         {sug.map((u) => (<div className="person" key={u.id}><Avatar user={u} size={40} /><div className="grow"><a className="name" href={'#/profile/' + u.id}>{u.name}</a></div>
-          <button className="btn primary sm" onClick={() => { sendRequest(u.id); toast('অনুরোধ পাঠানো হয়েছে।'); }}>Add</button></div>))}
+          <button className="btn primary sm" onClick={() => { sendRequest(u.id); toast('Request sent.'); }}>Add</button></div>))}
       </section>
     </div>
   );

@@ -20,25 +20,25 @@ const toMinor = (v, cur) => Math.round(parseFloat(v) * (ZERO_DEC.includes(cur) ?
 
 function useLoad(fn, deps = []) {
   const [data, setData] = useState(null); const [err, setErr] = useState('');
-  const load = useCallback(() => { setErr(''); Promise.resolve().then(fn).then(setData).catch((e) => setErr(e.message || 'ত্রুটি')); }, deps); // eslint-disable-line
+  const load = useCallback(() => { setErr(''); Promise.resolve().then(fn).then(setData).catch((e) => setErr(e.message || 'Error')); }, deps); // eslint-disable-line
   useEffect(load, [load]);
   return [data, err, load];
 }
 
 function NeedOnline({ children }) {
   const s = useStore(); const user = me(s);
-  if (!isOnline() || !user?.cloud) return (<div className="stack"><Head title="FYNZA" /><section className="card pad"><b>অনলাইন অ্যাকাউন্ট দরকার</b><p className="muted">এই ফিচারটি আসল ডাটাবেসের সাথে কাজ করে। Settings থেকে ডাটাবেস কানেক্ট করে অনলাইন অ্যাকাউন্টে লগইন করুন।</p><a className="btn" href="#/settings">Settings</a></section></div>);
+  if (!isOnline() || !user?.cloud) return (<div className="stack"><Head title="FYNZA" /><section className="card pad"><b>Online account required</b><p className="muted">This feature works with the real database. Connect the database in Settings and log in to an online account.</p><a className="btn" href="#/settings">Settings</a></section></div>);
   return children(user);
 }
 
-const NOTICE = 'পেমেন্ট সিস্টেম এখন সাময়িকভাবে বন্ধ। কোনো টাকা নেওয়া হচ্ছে না, কোনো সাবস্ক্রিপশন বা উইথড্র চালু নেই। ব্যবসায়িক অনুমোদন ও পেমেন্ট প্রোভাইডার চালু হলে এটি চালু হবে।';
+const NOTICE = 'The payment system is temporarily off. No money is being collected, and no subscriptions or withdrawals are active. It will be enabled once business approval and a payment provider are in place.';
 const Notice = () => <p className="card pad" style={{ background: '#FFF7E6', borderColor: '#F5C26B' }}><IoLockClosed /> <b>Coming Soon · Temporarily Unavailable.</b> {NOTICE}</p>;
 
 export function PayOptions({ country, direction = 'pay' }) {
   const [rows, err] = useLoad(() => cloud.paymentOptions(country, direction), [country, direction]);
   if (err) return <p className="form-err">{err}</p>;
-  if (!rows) return <p className="muted">লোড হচ্ছে…</p>;
-  if (!rows.length) return <p className="muted">এই দেশের জন্য এখনও কোনো পদ্ধতি তালিকাভুক্ত নেই।</p>;
+  if (!rows) return <p className="muted">Loading…</p>;
+  if (!rows.length) return <p className="muted">No methods are listed for this country yet.</p>;
   return (
     <div className="stack" style={{ gap: 6 }}>
       {rows.map((m) => (
@@ -58,57 +58,57 @@ function PasswordBox() {
   const [a, setA] = useState(''); const [b, setB] = useState(''); const [busy, setBusy] = useState(false);
   const bad = a ? passwordProblems(a) : [];
   const save = async () => {
-    if (a !== b) return toast('দুটি পাসওয়ার্ড মেলেনি।');
+    if (a !== b) return toast('The two passwords do not match.');
     setBusy(true);
-    try { await changePassword(a); toast('পাসওয়ার্ড বদলানো হয়েছে।'); setA(''); setB(''); } catch (e) { toast(e.message); }
+    try { await changePassword(a); toast('Password changed.'); setA(''); setB(''); } catch (e) { toast(e.message); }
     setBusy(false);
   };
   return (
-    <section className="card pad"><b>পাসওয়ার্ড বদলান</b>
-      <input className="input" type="password" autoComplete="new-password" placeholder="নতুন পাসওয়ার্ড" value={a} onChange={(e) => setA(e.target.value)} />
-      {bad.length > 0 && <small className="muted">লাগবে: {bad.join(', ')}</small>}
-      <input className="input" type="password" autoComplete="new-password" placeholder="আবার লিখুন" value={b} onChange={(e) => setB(e.target.value)} />
-      <button className="btn" disabled={busy || !a || bad.length > 0} onClick={save}>পাসওয়ার্ড সেভ করুন</button>
+    <section className="card pad"><b>Change password</b>
+      <input className="input" type="password" autoComplete="new-password" placeholder="New password" value={a} onChange={(e) => setA(e.target.value)} />
+      {bad.length > 0 && <small className="muted">Needs: {bad.join(', ')}</small>}
+      <input className="input" type="password" autoComplete="new-password" placeholder="Re-enter" value={b} onChange={(e) => setB(e.target.value)} />
+      <button className="btn" disabled={busy || !a || bad.length > 0} onClick={save}>Save password</button>
     </section>
   );
 }
 
-function TwoFactor() {
+export function TwoFactor({ onDone }) {
   const [list, , reload] = useLoad(mfaFactors, []);
   const [enr, setEnr] = useState(null); const [code, setCode] = useState('');
   const verified = (list || []).filter((f) => f.status === 'verified');
   const start = async () => { try { setEnr(await mfaStartEnroll()); setCode(''); } catch (e) { toast(e.message); } };
-  const finish = async () => { try { await mfaFinishEnroll(enr.id, code); toast('2FA চালু হয়েছে।'); setEnr(null); reload(); } catch (e) { toast(e.message); } };
-  const off = async (id) => { if (!confirm('2FA বন্ধ করবেন? অ্যাকাউন্ট কম সুরক্ষিত হবে।')) return; try { await mfaDisable(id); toast('2FA বন্ধ করা হয়েছে।'); reload(); } catch (e) { toast(e.message); } };
+  const finish = async () => { try { await mfaFinishEnroll(enr.id, code); toast('2FA enabled.'); setEnr(null); reload(); onDone && onDone(); } catch (e) { toast(e.message); } };
+  const off = async (id) => { if (!confirm('Turn off 2FA? Your account will be less secure.')) return; try { await mfaDisable(id); toast('2FA turned off.'); reload(); } catch (e) { toast(e.message); } };
   return (
-    <section className="card pad"><b>টু-ফ্যাক্টর (2FA)</b>
-      <p className="muted">Google Authenticator / Authy-এর মতো অ্যাপের ৬ সংখ্যার কোড। যে কেউ নিজে চালু করতে পারেন — অ্যাডমিনের অনুমতি লাগে না।</p>
+    <section className="card pad"><b>Two-factor (2FA)</b>
+      <p className="muted">A 6-digit code from an app like Google Authenticator / Authy. Anyone can turn it on themselves — no admin permission needed.</p>
       {verified.length > 0 ? (
         <>
-          <p><IoShieldCheckmark color="#16A34A" /> 2FA চালু আছে (এই সেশন: {sessionAal()}).</p>
-          {verified.map((f) => <button key={f.id} className="btn ghost danger" onClick={() => off(f.id)}>2FA বন্ধ করুন</button>)}
+          <p><IoShieldCheckmark color="#16A34A" /> 2FA is on (this session: {sessionAal()}).</p>
+          {verified.map((f) => <button key={f.id} className="btn ghost danger" onClick={() => off(f.id)}>Turn off 2FA</button>)}
         </>
       ) : enr ? (
         <>
-          <p>১) অথেনটিকেটর অ্যাপে এই QR স্ক্যান করুন (বা কী টাইপ করুন):</p>
+          <p>1) Scan this QR in your authenticator app (or type the key):</p>
           {enr.totp?.qr_code && <img alt="2FA QR" src={enr.totp.qr_code} width={180} height={180} style={{ background: '#fff', padding: 6 }} />}
           {enr.totp?.secret && <code style={{ wordBreak: 'break-all' }}>{enr.totp.secret}</code>}
-          <p>২) অ্যাপের ৬ সংখ্যার কোড দিন:</p>
+          <p>2) Enter the 6-digit code from the app:</p>
           <input className="input" inputMode="numeric" maxLength={6} placeholder="123456" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
-          <button className="btn" disabled={code.length !== 6} onClick={finish}>নিশ্চিত করুন</button>
+          <button className="btn" disabled={code.length !== 6} onClick={finish}>Confirm</button>
         </>
-      ) : <button className="btn" onClick={start}>2FA চালু করুন</button>}
+      ) : <button className="btn" onClick={start}>Turn on 2FA</button>}
     </section>
   );
 }
 
 function Devices() {
   const [rows, err] = useLoad(cloud.mySecurityEvents, []);
-  const L = { login: 'লগইন', login_failed: 'ব্যর্থ লগইন', logout_all: 'সব ডিভাইস থেকে লগআউট', password_changed: 'পাসওয়ার্ড বদল', mfa_enabled: '2FA চালু', mfa_disabled: '2FA বন্ধ', new_device: 'নতুন ডিভাইস' };
+  const L = { login: 'Login', login_failed: 'Failed login', logout_all: 'Logout from all devices', password_changed: 'Password changed', mfa_enabled: '2FA enabled', mfa_disabled: '2FA disabled', new_device: 'New device' };
   return (
-    <section className="card pad"><b>লগইন ও নিরাপত্তা ইতিহাস</b>
+    <section className="card pad"><b>Login and security history</b>
       {err && <p className="form-err">{err}</p>}
-      {rows && !rows.length && <p className="muted">এখনও কিছু নেই।</p>}
+      {rows && !rows.length && <p className="muted">Nothing yet.</p>}
       {(rows || []).map((r, i) => <div className="person" key={i}><IoTime /><div className="grow"><b>{L[r.kind] || r.kind}</b><small className="muted">{r.device || ''}</small></div><small className="muted">{timeAgo(r.created_at)}</small></div>)}
     </section>
   );
@@ -123,15 +123,15 @@ function DataBox() {
       const a = document.createElement('a'); a.href = url; a.download = 'fynza-my-data.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 5000);
     } catch (e) { toast(e.message); }
   };
-  const doDelete = async () => { try { await cloud.deleteMyAccount(); toast('অ্যাকাউন্ট মুছে ফেলা হয়েছে।'); logout(); go('#/'); } catch (e) { toast(e.message); } };
+  const doDelete = async () => { try { await cloud.deleteMyAccount(); toast('Account deleted.'); logout(); go('#/'); } catch (e) { toast(e.message); } };
   return (
-    <section className="card pad"><b>আমার তথ্য</b>
-      <button className="btn ghost" onClick={exp}>আমার তথ্য ডাউনলোড (JSON)</button>
-      <button className="btn ghost danger" onClick={() => setDel(true)}>অ্যাকাউন্ট চিরতরে মুছুন</button>
-      {del && <Sheet title="অ্যাকাউন্ট মুছে ফেলা" onClose={() => setDel(false)}>
-        <p>এটি ফেরানো যাবে না। আপনার পোস্ট, মেসেজ ও তথ্য মুছে যাবে। নিশ্চিত হলে নিচে <b>DELETE</b> লিখুন।</p>
+    <section className="card pad"><b>My data</b>
+      <button className="btn ghost" onClick={exp}>Download my data (JSON)</button>
+      <button className="btn ghost danger" onClick={() => setDel(true)}>Delete account permanently</button>
+      {del && <Sheet title="Delete account" onClose={() => setDel(false)}>
+        <p>This cannot be undone. Your posts, messages and data will be deleted. If you are sure, type <b>DELETE</b> below.</p>
         <input className="input" value={txt} onChange={(e) => setTxt(e.target.value)} />
-        <button className="btn danger" disabled={txt !== 'DELETE'} onClick={doDelete}>চিরতরে মুছুন</button>
+        <button className="btn danger" disabled={txt !== 'DELETE'} onClick={doDelete}>Delete permanently</button>
       </Sheet>}
     </section>
   );
@@ -142,11 +142,11 @@ export function SecurityPage() {
     <NeedOnline>{() => (
       <div className="stack">
         <Head title="Security" />
-        <section className="card pad"><b>আপনার নিরাপত্তা</b><p className="muted">পাসওয়ার্ড Supabase Auth-এ হ্যাশ করা থাকে; আমরা কখনও দেখি না। ৫ বার ভুল লগইনে ১৫ মিনিট লক হয়। প্রাইভেট মেসেজ ট্রান্সপোর্টে এনক্রিপ্টেড (HTTPS) ও ডাটাবেসে অ্যাক্সেস-কন্ট্রোলে সুরক্ষিত — তবে এন্ড-টু-এন্ড এনক্রিপশন এখনও নেই।</p></section>
+        <section className="card pad"><b>Your security</b><p className="muted">Passwords are hashed in Supabase Auth; we never see them. 5 wrong login attempts lock the account for 15 minutes. Private messages are encrypted in transit (HTTPS) and protected by access control in the database — but end-to-end encryption is not available yet.</p></section>
         <PasswordBox />
         <TwoFactor />
-        <section className="card pad"><b>সব ডিভাইস থেকে লগআউট</b><p className="muted">কেউ আপনার অ্যাকাউন্টে ঢুকেছে সন্দেহ হলে চাপুন, তারপর পাসওয়ার্ড বদলান।</p>
-          <button className="btn ghost danger" onClick={async () => { try { await logoutAllDevices(); logout(); go('#/'); } catch (e) { toast(e.message); } }}>সব ডিভাইস থেকে লগআউট</button></section>
+        <section className="card pad"><b>Logout from all devices</b><p className="muted">If you suspect someone has accessed your account, press this, then change your password.</p>
+          <button className="btn ghost danger" onClick={async () => { try { await logoutAllDevices(); logout(); go('#/'); } catch (e) { toast(e.message); } }}>Logout from all devices</button></section>
         <Devices />
         <DataBox />
       </div>
@@ -155,7 +155,7 @@ export function SecurityPage() {
 }
 
 // ---------- FYNZA Verified ----------
-const ST = { pending: 'রিভিউয়ের অপেক্ষায়', identity_approved: 'পরিচয় অনুমোদিত — পেমেন্ট চালু হলে ব্যাজ সক্রিয় হবে', approved: 'অনুমোদিত', rejected: 'বাতিল', expired: 'মেয়াদ শেষ' };
+const ST = { pending: 'Awaiting review', identity_approved: 'Identity approved — badge will activate once payments are enabled', approved: 'Approved', rejected: 'Rejected', expired: 'Expired' };
 
 function ApplyForm({ user, pages, onDone }) {
   const [target, setTarget] = useState('me'); const [fullName, setFullName] = useState(user.name || '');
@@ -163,27 +163,27 @@ function ApplyForm({ user, pages, onDone }) {
   const [doc, setDoc] = useState(null); const [selfie, setSelfie] = useState(null); const [busy, setBusy] = useState(false);
   const mine = pages.filter((p) => p.owner === user.id && !p.verified);
   const send = async () => {
-    if (!doc || !selfie) return toast('ডকুমেন্ট ও সেলফি দুটোই দিন।');
+    if (!doc || !selfie) return toast('Provide both a document and a selfie.');
     setBusy(true);
     try {
       const t = Date.now(); const ext = (f) => (f.type === 'application/pdf' ? 'pdf' : f.type === 'image/png' ? 'png' : f.type === 'image/webp' ? 'webp' : 'jpg');
       const dp = await uploadFile('verify', `${user.id}/${t}-doc.${ext(doc)}`, doc);
       const sp = await uploadFile('verify', `${user.id}/${t}-selfie.${ext(selfie)}`, selfie);
       await cloud.submitVerification({ page: target === 'me' ? null : target, fullName, docType, docPath: dp, selfiePath: sp, country });
-      toast('আবেদন জমা হয়েছে। অ্যাডমিন রিভিউ করবেন।'); onDone();
+      toast('Application submitted. An admin will review it.'); onDone();
     } catch (e) { toast(e.message); }
     setBusy(false);
   };
   return (
-    <section className="card pad"><b>ভেরিফিকেশনের আবেদন</b>
-      <p className="muted">প্রথমে পরিচয় যাচাই। ডকুমেন্ট ও সেলফি প্রাইভেট স্টোরেজে থাকে; শুধু অনুমোদিত অ্যাডমিন দেখতে পারেন।</p>
-      <label>কার জন্য<select className="input sel" value={target} onChange={(e) => setTarget(e.target.value)}><option value="me">আমার প্রোফাইল</option>{mine.map((p) => <option key={p.id} value={p.id}>পেজ: {p.name}</option>)}</select></label>
-      <input className="input" placeholder="ডকুমেন্টে যে পূর্ণ নাম আছে" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-      <label>ডকুমেন্টের ধরন<select className="input sel" value={docType} onChange={(e) => setDocType(e.target.value)}><option value="national_id">National ID</option><option value="passport">Passport</option><option value="driver_license">Driving licence</option><option value="other">অন্য সরকারি ডকুমেন্ট</option></select></label>
-      <label>দেশ<select className="input sel" value={country} onChange={(e) => setCountry(e.target.value)}><option value="">— বেছে নিন —</option>{COUNTRIES.map((c) => <option key={c} value={c}>{countryName(c)}</option>)}</select></label>
-      <label>ডকুমেন্টের ছবি/PDF (সর্বোচ্চ ৫MB)<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(e) => setDoc(e.target.files[0] || null)} /></label>
-      <label>আপনার সেলফি<input type="file" accept="image/jpeg,image/png,image/webp" capture="user" onChange={(e) => setSelfie(e.target.files[0] || null)} /></label>
-      <button className="btn" disabled={busy || fullName.trim().length < 3 || !doc || !selfie} onClick={send}>{busy ? 'পাঠানো হচ্ছে…' : 'আবেদন জমা দিন'}</button>
+    <section className="card pad"><b>Verification application</b>
+      <p className="muted">Identity is verified first. The document and selfie are kept in private storage; only authorized admins can view them.</p>
+      <label>Applying for<select className="input sel" value={target} onChange={(e) => setTarget(e.target.value)}><option value="me">My profile</option>{mine.map((p) => <option key={p.id} value={p.id}>Page: {p.name}</option>)}</select></label>
+      <input className="input" placeholder="Full name as on the document" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+      <label>Document type<select className="input sel" value={docType} onChange={(e) => setDocType(e.target.value)}><option value="national_id">National ID</option><option value="passport">Passport</option><option value="driver_license">Driving licence</option><option value="other">Other government document</option></select></label>
+      <label>Country<select className="input sel" value={country} onChange={(e) => setCountry(e.target.value)}><option value="">— Select —</option>{COUNTRIES.map((c) => <option key={c} value={c}>{countryName(c)}</option>)}</select></label>
+      <label>Document photo/PDF (max 5MB)<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(e) => setDoc(e.target.files[0] || null)} /></label>
+      <label>Your selfie<input type="file" accept="image/jpeg,image/png,image/webp" capture="user" onChange={(e) => setSelfie(e.target.files[0] || null)} /></label>
+      <button className="btn" disabled={busy || fullName.trim().length < 3 || !doc || !selfie} onClick={send}>{busy ? 'Sending…' : 'Submit application'}</button>
     </section>
   );
 }
@@ -203,32 +203,32 @@ function VerifyInner({ user, pages }) {
     <div className="stack">
       <Head title="FYNZA Verified" />
       <section className="card pad"><b>FYNZA Verified <Badge on size={20} /></b>
-        <p className="muted">নীল ব্যাজ দেখায় আপনার পরিচয় যাচাই হয়েছে। প্রোফাইল ও পেজ — দুটোতেই পাওয়া যায়। মাসিক ফি; ব্যাজ বাতিল/মেয়াদ শেষ না হলে আপনার নাম বদলালেও থাকে।</p>
-        {user.verified && <p><IoRibbon color="#1D4ED8" /> আপনার প্রোফাইল ভেরিফায়েড।</p>}
+        <p className="muted">The blue badge shows your identity has been verified. Available for both profiles and pages. Monthly fee; the badge stays even if you change your name, unless it is revoked or expires.</p>
+        {user.verified && <p><IoRibbon color="#1D4ED8" /> Your profile is verified.</p>}
       </section>
       <Notice />
-      <section className="card pad"><b>মাসিক মূল্য</b>
-        {plans && !plans.length && <p className="muted">অ্যাডমিন এখনও কোনো মূল্য নির্ধারণ করেননি।</p>}
-        {(plans || []).map((p) => <div className="person" key={p.id}><b className="grow">{p.currency}</b><span>{money(p.amount_minor, p.currency)} / মাস</span></div>)}
-        <small className="muted">অটো-রিনিউ কাঠামো প্রস্তুত, কিন্তু পেমেন্ট চালু না হওয়া পর্যন্ত কোনো সাবস্ক্রিপশন বা অটো-রিনিউ সক্রিয় নয়। রিনিউয়ের রিমাইন্ডার ও ব্যর্থ/মেয়াদোত্তীর্ণ পেমেন্ট ব্যবস্থাপনা পেমেন্ট চালুর সাথে কাজ করবে।</small>
+      <section className="card pad"><b>Monthly price</b>
+        {plans && !plans.length && <p className="muted">The admin has not set any price yet.</p>}
+        {(plans || []).map((p) => <div className="person" key={p.id}><b className="grow">{p.currency}</b><span>{money(p.amount_minor, p.currency)} / month</span></div>)}
+        <small className="muted">The auto-renew framework is ready, but no subscription or auto-renew is active until payments are enabled. Renewal reminders and failed/expired payment handling will work once payments are on.</small>
       </section>
-      <section className="card pad"><b>পেমেন্ট পদ্ধতি (আপনার দেশ অনুযায়ী)</b>
-        <select className="input sel" value={country} onChange={(e) => setCountry(e.target.value)}><option value="">সব দেশ</option>{COUNTRIES.map((c) => <option key={c} value={c}>{countryName(c)}</option>)}</select>
+      <section className="card pad"><b>Payment methods (by your country)</b>
+        <select className="input sel" value={country} onChange={(e) => setCountry(e.target.value)}><option value="">All countries</option>{COUNTRIES.map((c) => <option key={c} value={c}>{countryName(c)}</option>)}</select>
         <PayOptions country={country || null} />
       </section>
       {err && <p className="form-err">{err}</p>}
       {!pending && !user.verified && <ApplyForm user={user} pages={pages} onDone={reload} />}
-      <section className="card pad"><b>আমার আবেদন</b>
-        {apps && !apps.length && <p className="muted">কোনো আবেদন নেই।</p>}
-        {(apps || []).map((a) => <div className="person" key={a.id}><div className="grow"><b>{a.page_id ? 'পেজ' : 'প্রোফাইল'} · {a.doc_type}</b><small className="muted">{ST[a.status] || a.status}{a.admin_note ? ' — ' + a.admin_note : ''}</small></div><small className="muted">{timeAgo(a.created_at)}</small></div>)}
+      <section className="card pad"><b>My applications</b>
+        {apps && !apps.length && <p className="muted">No applications.</p>}
+        {(apps || []).map((a) => <div className="person" key={a.id}><div className="grow"><b>{a.page_id ? 'Page' : 'Profile'} · {a.doc_type}</b><small className="muted">{ST[a.status] || a.status}{a.admin_note ? ' — ' + a.admin_note : ''}</small></div><small className="muted">{timeAgo(a.created_at)}</small></div>)}
       </section>
-      <section className="card pad"><b>পেমেন্ট ইতিহাস</b><p className="muted">কোনো পেমেন্ট হয়নি — পেমেন্ট এখনও বন্ধ।</p></section>
+      <section className="card pad"><b>Payment history</b><p className="muted">No payments yet — payments are still off.</p></section>
     </div>
   );
 }
 
 // ---------- Ads (advertiser dashboard) ----------
-const CAMP_ST = { draft: 'খসড়া', pending_review: 'রিভিউয়ে', approved: 'অনুমোদিত', rejected: 'বাতিল', paused: 'বিরতি', active: 'চালু', ended: 'শেষ' };
+const CAMP_ST = { draft: 'Draft', pending_review: 'In review', approved: 'Approved', rejected: 'Rejected', paused: 'Paused', active: 'Active', ended: 'Ended' };
 
 function Stats({ id }) {
   const [st] = useLoad(() => cloud.campaignStats(id), [id]);
@@ -246,27 +246,27 @@ function CampaignForm({ onDone }) {
       if (f.minAge) targeting.min_age = +f.minAge; if (f.maxAge) targeting.max_age = +f.maxAge;
       const it = f.interests.split(',').map((x) => x.trim()).filter(Boolean).slice(0, 10); if (it.length) targeting.interests = it;
       await cloud.createCampaign({ name: f.name, objective: f.objective, headline: f.headline, body: f.body, link: f.link, currency: f.currency, budget: toMinor(f.budget || 0, f.currency), daily: toMinor(f.daily || 0, f.currency), start: f.start, end: f.end, targeting });
-      toast('খসড়া ক্যাম্পেইন সেভ হয়েছে।'); onDone();
+      toast('Draft campaign saved.'); onDone();
     } catch (e) { toast(e.message); }
   };
   return (
-    <Sheet title="নতুন ক্যাম্পেইন (খসড়া)" onClose={onDone}>
-      <input className="input" placeholder="ক্যাম্পেইনের নাম" value={f.name} onChange={set('name')} />
+    <Sheet title="New campaign (draft)" onClose={onDone}>
+      <input className="input" placeholder="Campaign name" value={f.name} onChange={set('name')} />
       <select className="input sel" value={f.objective} onChange={set('objective')}><option value="awareness">Awareness</option><option value="traffic">Traffic</option><option value="engagement">Engagement</option></select>
-      <input className="input" maxLength={80} placeholder="হেডলাইন" value={f.headline} onChange={set('headline')} />
-      <textarea className="input" maxLength={300} placeholder="বিজ্ঞাপনের লেখা" value={f.body} onChange={set('body')} />
-      <input className="input" placeholder="লিংক (https://…)" value={f.link} onChange={set('link')} />
+      <input className="input" maxLength={80} placeholder="Headline" value={f.headline} onChange={set('headline')} />
+      <textarea className="input" maxLength={300} placeholder="Ad text" value={f.body} onChange={set('body')} />
+      <input className="input" placeholder="Link (https://…)" value={f.link} onChange={set('link')} />
       <select className="input sel" value={f.currency} onChange={set('currency')}>{CURRENCIES.map((c) => <option key={c}>{c}</option>)}</select>
-      <input className="input" inputMode="decimal" placeholder="মোট বাজেট" value={f.budget} onChange={set('budget')} />
-      <input className="input" inputMode="decimal" placeholder="দৈনিক বাজেট" value={f.daily} onChange={set('daily')} />
-      <label>শুরু<input className="input" type="date" value={f.start} onChange={set('start')} /></label>
-      <label>শেষ<input className="input" type="date" value={f.end} onChange={set('end')} /></label>
-      <b>টার্গেটিং</b>
-      <input className="input" placeholder="দেশ কোড (যেমন BD, US, GB)" value={f.countries} onChange={set('countries')} />
-      <input className="input" inputMode="numeric" placeholder="সর্বনিম্ন বয়স" value={f.minAge} onChange={set('minAge')} />
-      <input className="input" inputMode="numeric" placeholder="সর্বোচ্চ বয়স" value={f.maxAge} onChange={set('maxAge')} />
-      <input className="input" placeholder="আগ্রহ (কমা দিয়ে)" value={f.interests} onChange={set('interests')} />
-      <button className="btn" disabled={f.name.trim().length < 3} onClick={save}>খসড়া সেভ করুন</button>
+      <input className="input" inputMode="decimal" placeholder="Total budget" value={f.budget} onChange={set('budget')} />
+      <input className="input" inputMode="decimal" placeholder="Daily budget" value={f.daily} onChange={set('daily')} />
+      <label>Start<input className="input" type="date" value={f.start} onChange={set('start')} /></label>
+      <label>End<input className="input" type="date" value={f.end} onChange={set('end')} /></label>
+      <b>Targeting</b>
+      <input className="input" placeholder="Country codes (e.g. BD, US, GB)" value={f.countries} onChange={set('countries')} />
+      <input className="input" inputMode="numeric" placeholder="Minimum age" value={f.minAge} onChange={set('minAge')} />
+      <input className="input" inputMode="numeric" placeholder="Maximum age" value={f.maxAge} onChange={set('maxAge')} />
+      <input className="input" placeholder="Interests (comma-separated)" value={f.interests} onChange={set('interests')} />
+      <button className="btn" disabled={f.name.trim().length < 3} onClick={save}>Save draft</button>
     </Sheet>
   );
 }
@@ -281,22 +281,22 @@ function AdsInner() {
   return (
     <div className="stack">
       <Head title="Advertiser dashboard" />
-      <section className="card pad"><b><IoMegaphone /> বিজ্ঞাপন ও Sponsored Posts</b><p className="muted">ক্যাম্পেইন বানান, বাজেট ও টার্গেটিং ঠিক করুন, অ্যাডমিন রিভিউয়ে পাঠান। বিজ্ঞাপন চালানো (Launch) পেমেন্ট চালু হওয়ার পরে সম্ভব — এখন চালু করা যায় না এবং কোনো আয়/খরচ দেখানো হয় না।</p></section>
+      <section className="card pad"><b><IoMegaphone /> Ads and Sponsored Posts</b><p className="muted">Create campaigns, set budget and targeting, and send them for admin review. Running ads (Launch) is possible only after payments are enabled — they cannot be launched now and no earnings/spend is shown.</p></section>
       <Notice />
-      <button className="btn" onClick={() => setAdding(true)}>+ নতুন ক্যাম্পেইন</button>
+      <button className="btn" onClick={() => setAdding(true)}>+ New campaign</button>
       {adding && <CampaignForm onDone={() => { setAdding(false); reload(); }} />}
       {err && <p className="form-err">{err}</p>}
-      {rows && !rows.length && <Empty title="কোনো ক্যাম্পেইন নেই" />}
+      {rows && !rows.length && <Empty title="No campaigns" />}
       {(rows || []).map((c) => (
         <section className="card pad" key={c.id}>
           <b>{c.name}</b> <small className="muted">· {CAMP_ST[c.status] || c.status} · {c.objective}</small>
-          <p>{c.headline}</p><p className="muted">বাজেট {money(c.budget_minor, c.currency)} (দৈনিক {money(c.daily_budget_minor, c.currency)})</p>
+          <p>{c.headline}</p><p className="muted">Budget {money(c.budget_minor, c.currency)} (daily {money(c.daily_budget_minor, c.currency)})</p>
           {c.reject_reason && <p className="form-err">{c.reject_reason}</p>}
           <Stats id={c.id} />
           <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-            {(c.status === 'draft' || c.status === 'rejected') && <button className="btn ghost sm" onClick={() => act(() => cloud.submitCampaign(c.id), 'রিভিউয়ে পাঠানো হয়েছে।')}>রিভিউয়ে পাঠান</button>}
-            {c.status === 'approved' && <button className="btn ghost sm" disabled title="পেমেন্ট চালু হলে">Launch — Coming Soon</button>}
-            {(c.status === 'draft' || c.status === 'rejected') && <button className="btn ghost danger sm" onClick={() => act(() => cloud.deleteCampaign(c.id), 'মুছে ফেলা হয়েছে।')}>মুছুন</button>}
+            {(c.status === 'draft' || c.status === 'rejected') && <button className="btn ghost sm" onClick={() => act(() => cloud.submitCampaign(c.id), 'Sent for review.')}>Send for review</button>}
+            {c.status === 'approved' && <button className="btn ghost sm" disabled title="Available once payments are enabled">Launch — Coming Soon</button>}
+            {(c.status === 'draft' || c.status === 'rejected') && <button className="btn ghost danger sm" onClick={() => act(() => cloud.deleteCampaign(c.id), 'Deleted.')}>Delete</button>}
           </div>
         </section>
       ))}
@@ -318,42 +318,42 @@ function CreatorInner({ user }) {
   const [country, setCountry] = useState(user.country || '');
   const a = app?.[0];
   const ok = el && el.length && el.every((r) => r.ok);
-  const apply = async () => { try { await cloud.applyCreator(); toast('আবেদন জমা হয়েছে।'); reloadApp(); reload(); } catch (e) { toast(e.message); } };
+  const apply = async () => { try { await cloud.applyCreator(); toast('Application submitted.'); reloadApp(); reload(); } catch (e) { toast(e.message); } };
   return (
     <div className="stack">
       <Head title="Creator dashboard" />
-      <section className="card pad"><b>Creator Monetization</b><p className="muted">Reels, ভিডিও, যোগ্য পোস্ট, Stars/Gifts, লাইভ গিফট ও বিজ্ঞাপন-রেভিনিউ শেয়ারের কাঠামো তৈরি। আয় গণনা ও উইথড্র পেমেন্ট চালুর পরে শুরু হবে — এখন সব ব্যালেন্স আসলেই শূন্য।</p></section>
+      <section className="card pad"><b>Creator Monetization</b><p className="muted">The framework for Reels, videos, eligible posts, Stars/Gifts, live gifts and ad-revenue share is built. Earnings calculation and withdrawals start after payments are enabled — all balances are genuinely zero right now.</p></section>
       <Notice />
-      <section className="card pad"><b>যোগ্যতা (আসল তথ্য থেকে)</b>
+      <section className="card pad"><b>Eligibility (from real data)</b>
         {err && <p className="form-err">{err}</p>}
         {(el || []).map((r) => <div className="person" key={r.key}><span>{r.ok ? '✅' : '⬜'}</span><b className="grow">{r.label}</b><small className="muted">{r.have} / {r.need}</small></div>)}
-        {a ? <p>আবেদনের অবস্থা: <b>{a.status === 'pending' ? 'রিভিউয়ে' : a.status === 'approved' ? 'অনুমোদিত' : 'বাতিল'}</b>{a.note ? ' — ' + a.note : ''}</p>
-          : <button className="btn" disabled={!ok} onClick={apply}>Creator প্রোগ্রামে আবেদন</button>}
+        {a ? <p>Application status: <b>{a.status === 'pending' ? 'In review' : a.status === 'approved' ? 'Approved' : 'Rejected'}</b>{a.note ? ' — ' + a.note : ''}</p>
+          : <button className="btn" disabled={!ok} onClick={apply}>Apply to the Creator program</button>}
       </section>
-      <section className="card pad"><b>আয় (Earnings)</b>
+      <section className="card pad"><b>Earnings</b>
         <div className="admin-stats"><div className="card pad stat"><b>{sum?.pending_minor ?? 0}</b><small className="muted">Pending</small></div><div className="card pad stat"><b>{sum?.available_minor ?? 0}</b><small className="muted">Available</small></div><div className="card pad stat"><b>{sum?.paid_minor ?? 0}</b><small className="muted">Paid</small></div></div>
-        {earn && !earn.length && <p className="muted">কোনো আয় নেই।</p>}
+        {earn && !earn.length && <p className="muted">No earnings.</p>}
         {(earn || []).map((e) => <div className="person" key={e.id}><b className="grow">{e.kind}</b><span>{money(e.amount_minor, e.currency)}</span><small className="muted">{e.status}</small></div>)}
       </section>
-      <section className="card pad"><b>Withdrawal (উইথড্র)</b>
-        <p className="muted">উইথড্র এখন বন্ধ। চালু হলে আপনার দেশের পদ্ধতি এখানে দেখা যাবে।</p>
-        <select className="input sel" value={country} onChange={(e) => setCountry(e.target.value)}><option value="">সব দেশ</option>{COUNTRIES.map((c) => <option key={c} value={c}>{countryName(c)}</option>)}</select>
+      <section className="card pad"><b>Withdrawal</b>
+        <p className="muted">Withdrawals are off right now. Once enabled, methods for your country will appear here.</p>
+        <select className="input sel" value={country} onChange={(e) => setCountry(e.target.value)}><option value="">All countries</option>{COUNTRIES.map((c) => <option key={c} value={c}>{countryName(c)}</option>)}</select>
         <PayOptions country={country || null} direction="payout" />
         <button className="btn ghost" disabled>Request withdrawal — Coming Soon</button>
         {wd && wd.length > 0 && wd.map((w) => <div className="person" key={w.id}><b className="grow">{w.method_id}</b><span>{money(w.amount_minor, w.currency)}</span><small className="muted">{w.status}</small></div>)}
       </section>
-      <section className="card pad"><b>Stars ও Virtual Gifts</b>
-        <p className="muted">Stars কেনা ও গিফট পাঠানো পেমেন্ট চালুর পরে। তালিকা:</p>
+      <section className="card pad"><b>Stars and Virtual Gifts</b>
+        <p className="muted">Buying Stars and sending gifts will be available after payments are enabled. List:</p>
         <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>{(gifts || []).map((g) => <span key={g.id} className="chip">{g.emoji} {g.name} · {g.stars}★</span>)}</div>
       </section>
-      <section className="card pad"><b>পেমেন্ট ইতিহাস</b><p className="muted">কোনো লেনদেন নেই।</p></section>
+      <section className="card pad"><b>Payment history</b><p className="muted">No transactions.</p></section>
     </div>
   );
 }
 
 // ---------- Hub + page insights ----------
 export function MoneyHub() {
-  const items = [['#/verify', 'FYNZA Verified', 'নীল ব্যাজের আবেদন ও অবস্থা', IoShieldCheckmark], ['#/ads', 'Advertiser dashboard', 'ক্যাম্পেইন, বাজেট, অ্যানালিটিক্স', IoMegaphone], ['#/creator', 'Creator dashboard', 'যোগ্যতা, আয়, উইথড্র', IoCash], ['#/security', 'Security', 'পাসওয়ার্ড, 2FA, ডিভাইস', IoLockClosed]];
+  const items = [['#/verify', 'FYNZA Verified', 'Apply for the blue badge and check status', IoShieldCheckmark], ['#/ads', 'Advertiser dashboard', 'Campaigns, budget, analytics', IoMegaphone], ['#/creator', 'Creator dashboard', 'Eligibility, earnings, withdrawals', IoCash], ['#/security', 'Security', 'Password, 2FA, devices', IoLockClosed]];
   return (
     <div className="stack">
       <Head title="Verified, Ads & Creators" />
@@ -377,7 +377,7 @@ export function PageInsights({ id }) {
 export function SponsoredSlot({ country }) {
   const [ads] = useLoad(() => cloud.feedAds(country), [country]);
   if (!ads || !ads.length) return null;
-  return <>{ads.map((a) => <section className="card pad" key={a.id}><small className="muted">Sponsored</small><b>{a.headline}</b><p>{a.body}</p>{a.link_url && <a className="btn ghost sm" href={a.link_url} target="_blank" rel="noopener noreferrer nofollow">আরও দেখুন</a>}</section>)}</>;
+  return <>{ads.map((a) => <section className="card pad" key={a.id}><small className="muted">Sponsored</small><b>{a.headline}</b><p>{a.body}</p>{a.link_url && <a className="btn ghost sm" href={a.link_url} target="_blank" rel="noopener noreferrer nofollow">Learn more</a>}</section>)}</>;
 }
 
 // ---------- Report dialog (reason + details) ----------
@@ -388,13 +388,13 @@ export function ReportLayer() {
   const [r, setR] = useState(null); const [reason, setReason] = useState('spam'); const [text, setText] = useState('');
   useEffect(() => { setRep = setR; return () => { setRep = null; }; }, []);
   if (!r) return null;
-  const send = () => { report(r.kind, r.target, reason + (text.trim() ? ': ' + text.trim().slice(0, 500) : '')); toast('রিপোর্ট জমা হয়েছে। অ্যাডমিন দেখবেন — ধন্যবাদ।'); setR(null); setText(''); };
+  const send = () => { report(r.kind, r.target, reason + (text.trim() ? ': ' + text.trim().slice(0, 500) : '')); toast('Report submitted. An admin will review it — thank you.'); setR(null); setText(''); };
   return (
-    <Sheet title="রিপোর্ট করুন" onClose={() => setR(null)}>
+    <Sheet title="Report" onClose={() => setR(null)}>
       {REASONS.map(([k, l]) => <label key={k} className="toggle-row"><span>{l}</span><input type="radio" name="rr" checked={reason === k} onChange={() => setReason(k)} /></label>)}
-      <textarea className="input" maxLength={500} placeholder="বিস্তারিত লিখুন (ঐচ্ছিক)" value={text} onChange={(e) => setText(e.target.value)} />
-      <small className="muted">রিপোর্ট শুধু অনুমোদিত অ্যাডমিনরা দেখেন। মিথ্যা রিপোর্ট করবেন না।</small>
-      <button className="btn danger" onClick={send}>রিপোর্ট পাঠান</button>
+      <textarea className="input" maxLength={500} placeholder="Add details (optional)" value={text} onChange={(e) => setText(e.target.value)} />
+      <small className="muted">Reports are seen only by authorized admins. Please do not file false reports.</small>
+      <button className="btn danger" onClick={send}>Send report</button>
     </Sheet>
   );
 }

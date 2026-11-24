@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { IoArrowBack, IoEllipsisHorizontal, IoPersonAdd, IoChatbubbleEllipses, IoCamera, IoEye, IoCheckmark } from 'react-icons/io5';
+import { IoArrowBack, IoEllipsisHorizontal, IoPersonAdd, IoChatbubbleEllipses, IoCamera, IoEye, IoCheckmark, IoLockClosed, IoAdd, IoPlay, IoBriefcase } from 'react-icons/io5';
 import {
   useStore, me, updateProfile, recordVisit, areFriends, requestBetween, sendRequest, acceptRequest, declineRequest, unfriend, toggleFollow,
-  isBlocked, blockUser, unblockUser, report, openChat, compressImage, mySettings, visitsOfMe, fullTime, fetchUserOnline, loadProfileExtras, openChatOnline,
+  isBlocked, blockUser, unblockUser, report, openChat, compressImage, mySettings, visitsOfMe, fullTime, fetchUserOnline, loadProfileExtras, openChatOnline, liveStories, getState,
 } from './store.js';
 import { askReport } from './monet.jsx';
 import { Avatar, Sheet, toast, go, back, Empty, LocalNote, Badge } from './ui.jsx';
 import { PostCard, canSee } from './feed.jsx';
+import * as api from './profileApi.js';
 
 function EditProfile({ user, onClose }) {
   const [name, setName] = useState(user.name);
@@ -15,10 +16,10 @@ function EditProfile({ user, onClose }) {
   const [cover, setCover] = useState(user.cover || '');
   const a = useRef(); const c = useRef();
   const save = async () => {
-    if (name.trim().length < 2) return toast('নাম কমপক্ষে ২ অক্ষর হতে হবে।');
+    if (name.trim().length < 2) return toast('Name must be at least 2 characters.');
     const err = await updateProfile({ name: name.trim(), bio: bio.trim(), avatar, cover });
-    if (err) toast('অনলাইনে সেভ হয়নি: ' + err);
-    else toast(user.cloud ? 'প্রোফাইল অনলাইনে সেভ হয়েছে।' : 'প্রোফাইল সেভ হয়েছে।');
+    if (err) toast('Could not save online: ' + err);
+    else toast(user.cloud ? 'Profile saved online.' : 'Profile saved.');
     onClose();
   };
   return (
@@ -39,6 +40,195 @@ function EditProfile({ user, onClose }) {
   );
 }
 
+
+const LocalOnly = ({ what }) => <div className="local-note">{what} is available with an online account only.</div>;
+
+// ---------- details (About) ----------
+const fmtBirthday = (d) => { try { return new Date(d + 'T00:00:00').toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { return d; } };
+function DetailsCard({ d, own, onEdit }) {
+  const rows = d ? [['Works at', d.work], ['Studied at', d.education], ['Lives in', d.current_city], ['From', d.hometown], ['Relationship', d.relationship], ['Website', d.website], ['Birthday', d.birthday && fmtBirthday(d.birthday)]].filter((r) => r[1]) : [];
+  if (!rows.length && !own) return null;
+  return (
+    <div className="card pad pv2-about">
+      <div className="row between"><b>About</b>{own && <button className="btn ghost sm" onClick={onEdit}>Edit details</button>}</div>
+      {rows.length ? rows.map(([k, v]) => (
+        <p key={k} className="pv2-row"><span className="muted">{k}</span>{k === 'Website' && /^https?:\/\//i.test(v) ? <a href={v} target="_blank" rel="noopener noreferrer nofollow">{v.replace(/^https?:\/\//i, '')}</a> : <b>{v}</b>}</p>
+      )) : <p className="muted">Add your work, education, city and more.</p>}
+    </div>
+  );
+}
+function VisSelect({ id, value, onChange }) {
+  return <select id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)}>{api.VIS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>;
+}
+function EditDetails({ meId, d, onSaved, onClose }) {
+  const [f, setF] = useState({ work: '', education: '', current_city: '', hometown: '', relationship: '', website: '', birthday: '', details_visibility: 'public', friends_visibility: 'public', ...(d || {}), birthday: d?.birthday || '' });
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const save = async () => {
+    const w = api.cleanWebsite(f.website);
+    if (w === null) return toast('Website must be a valid http or https address.');
+    setBusy(true);
+    try { const row = await api.saveDetails(meId, { ...f, website: w }); toast('Details saved.'); onSaved(row); onClose(); }
+    catch (e) { toast('Could not save: ' + e.message); setBusy(false); }
+  };
+  return (
+    <Sheet title="Edit details" onClose={onClose}>
+      <label htmlFor="dw">Work</label><input id="dw" className="input" maxLength={80} value={f.work} onChange={set('work')} />
+      <label htmlFor="de">Education</label><input id="de" className="input" maxLength={80} value={f.education} onChange={set('education')} />
+      <label htmlFor="dc">Current city</label><input id="dc" className="input" maxLength={60} value={f.current_city} onChange={set('current_city')} />
+      <label htmlFor="dh">Hometown</label><input id="dh" className="input" maxLength={60} value={f.hometown} onChange={set('hometown')} />
+      <label htmlFor="dr">Relationship</label>
+      <select id="dr" className="input" value={f.relationship} onChange={set('relationship')}>{api.REL.map((r) => <option key={r} value={r}>{r || 'Not set'}</option>)}</select>
+      <label htmlFor="dp">Website</label><input id="dp" className="input" inputMode="url" maxLength={120} placeholder="https://example.com" value={f.website} onChange={set('website')} />
+      <label htmlFor="db">Birthday</label><input id="db" type="date" className="input" value={f.birthday} onChange={set('birthday')} />
+      <label htmlFor="dv">Who can see my details</label><VisSelect id="dv" value={f.details_visibility} onChange={(v) => setF({ ...f, details_visibility: v })} />
+      <label htmlFor="df">Who can see my friends list</label><VisSelect id="df" value={f.friends_visibility} onChange={(v) => setF({ ...f, friends_visibility: v })} />
+      <button className="btn primary big" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+    </Sheet>
+  );
+}
+function ViewSettings({ meId, d, onSaved, onClose }) {
+  const [dv, setDv] = useState(d?.details_visibility || 'public');
+  const [fv, setFv] = useState(d?.friends_visibility || 'public');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const base = { work: '', education: '', current_city: '', hometown: '', relationship: '', website: '', birthday: '', ...(d || {}) };
+      const row = await api.saveDetails(meId, { ...base, details_visibility: dv, friends_visibility: fv });
+      toast('Profile view settings saved.'); onSaved(row); onClose();
+    } catch (e) { toast('Could not save: ' + e.message); setBusy(false); }
+  };
+  return (
+    <Sheet title="Profile view settings" onClose={onClose}>
+      <label htmlFor="pv1">Who can see my friends list</label><VisSelect id="pv1" value={fv} onChange={setFv} />
+      <label htmlFor="pv2">Who can see my details</label><VisSelect id="pv2" value={dv} onChange={setDv} />
+      <p className="muted small">Visit tracking (who can see that you viewed profiles) is in <a href="#/settings" onClick={onClose}>Settings</a>.</p>
+      <button className="btn primary big" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+    </Sheet>
+  );
+}
+
+// ---------- professional mode ----------
+function ProSheet({ meId, flags, onChange, onClose }) {
+  const [cat, setCat] = useState(flags.cat || 'Creator');
+  const [busy, setBusy] = useState(false);
+  const apply = async (on) => {
+    setBusy(true);
+    try { await api.setPro(meId, on, cat); onChange({ ...flags, pro: on, cat: on ? cat : '' }); toast(on ? 'Professional mode is on.' : 'Professional mode is off.'); onClose(); }
+    catch (e) { toast('Could not save: ' + e.message); setBusy(false); }
+  };
+  return (
+    <Sheet title="Professional mode" onClose={onClose}>
+      <p className="muted">Show a category on your profile and get quick access to Creator tools and Insights.</p>
+      <label htmlFor="pc">Category</label>
+      <select id="pc" className="input" value={cat} onChange={(e) => setCat(e.target.value)}>{api.PRO_CATS.map((c) => <option key={c}>{c}</option>)}</select>
+      <button className="btn primary big" disabled={busy} onClick={() => apply(true)}>{flags.pro ? 'Save category' : 'Turn on Professional mode'}</button>
+      {flags.pro && <button className="btn ghost big" disabled={busy} onClick={() => apply(false)}>Turn off Professional mode</button>}
+    </Sheet>
+  );
+}
+
+// ---------- highlights ----------
+// Save one of my ACTIVE stories to a new or existing highlight. Used by the profile and by the feed's story viewer.
+export function HighlightPicker({ story, onClose }) {
+  const [list, setList] = useState(null);
+  const [title, setTitle] = useState('');
+  const [busy, setBusy] = useState(false);
+  const online = !!me(getState())?.cloud;
+  useEffect(() => { if (!online) return; let on = true; api.loadHighlights(getState().me).then((x) => on && setList(x)).catch(() => on && setList([])); return () => { on = false; }; }, [online]);
+  const add = async (hid, t) => {
+    if (!hid && t.trim().length < 1) return toast('Enter a title for the new highlight.');
+    setBusy(true);
+    try { await api.addToHighlight(story.id, hid, t); toast('Saved to highlight.'); window.dispatchEvent(new Event('fynza-highlights')); onClose(); }
+    catch (e) { toast(/story not found/.test(e.message) ? 'Only your own active stories can be saved.' : 'Could not save: ' + e.message); setBusy(false); }
+  };
+  return (
+    <Sheet title="Save to highlight" onClose={onClose}>
+      {!online ? <LocalOnly what="Story highlights" /> : list === null ? <p className="muted">Loading…</p> : (
+        <>
+          {list.length > 0 && <><b>Add to existing</b>{list.map((h) => <button key={h.id} disabled={busy} className="menu-item" onClick={() => add(h.id, '')}><span className="pv2-mini" style={h.cover ? { backgroundImage: `url(${h.cover})` } : undefined} />{h.title}<small className="muted"> · {h.items.length}</small></button>)}</>}
+          <b>New highlight</b>
+          <input className="input" aria-label="Highlight title" maxLength={30} placeholder="Highlight title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <button className="btn primary big" disabled={busy} onClick={() => add(null, title)}>Create and save</button>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+function HighlightCreate({ onClose }) {
+  const s = useStore();
+  const mine = liveStories(s).filter((x) => x.author === s.me && x.cloud);
+  const [pick, setPick] = useState(null);
+  if (pick) return <HighlightPicker story={pick} onClose={onClose} />;
+  return (
+    <Sheet title="New highlight" onClose={onClose}>
+      {mine.length ? <><p className="muted">Pick one of your active stories (last 24 hours) to save.</p>
+        <div className="pv2-pick">{mine.map((x) => <button key={x.id} aria-label="Select story" className="pv2-tile" style={x.img ? { backgroundImage: `url(${x.img})` } : { background: x.bg || '#1F4FE0' }} onClick={() => setPick(x)}>{!x.img && <span>{x.text}</span>}</button>)}</div></>
+        : <><b>No active stories</b><p className="muted">Post a story first, then come back to save it as a highlight. You can also use "Save to highlight" while viewing your story.</p></>}
+    </Sheet>
+  );
+}
+
+function HighlightViewer({ h, own, onClose, onChanged }) {
+  const [i, setI] = useState(0);
+  const [ren, setRen] = useState(false);
+  const [title, setTitle] = useState(h.title);
+  const items = h.items;
+  const it = items[Math.min(i, items.length - 1)];
+  const paused = ren;
+  useEffect(() => {
+    if (!items.length || paused) return undefined;
+    const t = setTimeout(() => { if (i + 1 < items.length) setI(i + 1); else onClose(); }, 5000);
+    return () => clearTimeout(t);
+  }, [i, items.length, paused]); // eslint-disable-line
+  useEffect(() => { const k = (e) => e.key === 'Escape' && onClose(); window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose]);
+  const tap = (e) => { const r = e.currentTarget.getBoundingClientRect(); if (e.clientX - r.left < r.width / 3) setI(Math.max(0, i - 1)); else if (i + 1 < items.length) setI(i + 1); else onClose(); };
+  const rename = async () => { if (!title.trim()) return toast('Title cannot be empty.'); try { await api.renameHighlight(h.id, title); toast('Renamed.'); setRen(false); onChanged(); } catch (e) { toast('Could not rename: ' + e.message); } };
+  const del = async () => { if (!window.confirm('Delete this highlight?')) return; try { await api.deleteHighlight(h.id); toast('Highlight deleted.'); onClose(); onChanged(); } catch (e) { toast('Could not delete: ' + e.message); } };
+  const delItem = async () => { try { await api.deleteHighlightItem(it.id); toast('Removed from highlight.'); if (items.length <= 1) { await api.deleteHighlight(h.id); onClose(); } else setI(Math.max(0, i - 1)); onChanged(); } catch (e) { toast('Could not remove: ' + e.message); } };
+  return (
+    <div className="hl-view" role="dialog" aria-label={h.title}>
+      <div className="hl-bars">{items.map((x, k) => <span key={x.id}><i className={k < i ? 'done' : k === i ? 'run' : ''} /></span>)}</div>
+      <div className="hl-top"><b>{h.title}</b><span className="grow" />
+        {own && <><button className="hl-btn" onClick={() => setRen(true)}>Rename</button><button className="hl-btn" onClick={delItem}>Remove story</button><button className="hl-btn" onClick={del}>Delete</button></>}
+        <button className="hl-btn" aria-label="Close" onClick={onClose}>✕</button></div>
+      {it && <div key={it.id} className="hl-body" onClick={tap} style={it.img ? undefined : { background: it.bg || 'linear-gradient(135deg,#1F4FE0,#0B1F6B)' }}>
+        {it.img ? <img src={it.img} alt="" /> : <p className="story-text">{it.text}</p>}
+        {it.img && it.text && <p className="hl-cap">{it.text}</p>}
+      </div>}
+      {ren && <Sheet title="Rename highlight" onClose={() => setRen(false)}><input className="input" aria-label="Title" maxLength={30} value={title} onChange={(e) => setTitle(e.target.value)} /><button className="btn primary big" onClick={rename}>Save</button></Sheet>}
+    </div>
+  );
+}
+
+function Highlights({ userId, own }) {
+  const [list, setList] = useState(null);
+  const [view, setView] = useState(null);
+  const [create, setCreate] = useState(false);
+  const reload = () => api.loadHighlights(userId).then(setList).catch(() => setList([]));
+  useEffect(() => { setList(null); reload(); const h = () => reload(); window.addEventListener('fynza-highlights', h); return () => window.removeEventListener('fynza-highlights', h); }, [userId]); // eslint-disable-line
+  if (!list || (!list.length && !own)) return null;
+  const cur = view && list.find((x) => x.id === view);
+  return (
+    <div className="card pad pv2-hl">
+      <div className="hl-row">
+        {own && <button className="hl-item" onClick={() => setCreate(true)} aria-label="New highlight"><span className="hl-circ add"><IoAdd size={28} /></span><small>New</small></button>}
+        {list.map((h) => <button key={h.id} className="hl-item" onClick={() => h.items.length ? setView(h.id) : toast('This highlight is empty.')}>
+          <span className="hl-circ" style={h.cover ? { backgroundImage: `url(${h.cover})` } : { background: h.items[0]?.bg || '#1F4FE0' }}>{!h.cover && <IoPlay color="#fff" />}</span><small>{h.title}</small></button>)}
+      </div>
+      {cur && <HighlightViewer h={cur} own={own} onClose={() => setView(null)} onChanged={reload} />}
+      {create && <HighlightCreate onClose={() => { setCreate(false); reload(); }} />}
+    </div>
+  );
+}
+
+const copyText = async (t) => {
+  try { await navigator.clipboard.writeText(t); return true; } catch (e) { /* fallback */ }
+  try { const a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select(); const ok = document.execCommand('copy'); a.remove(); return ok; } catch (e) { return false; }
+};
+
 export function Profile({ id }) {
   const s = useStore();
   const user = me(s);
@@ -51,10 +241,10 @@ export function Profile({ id }) {
   useEffect(() => { if (!u) fetchUserOnline(id); else if (u.cloud) loadProfileExtras(id); }, [id, !!u]); // eslint-disable-line
   useEffect(() => { if (u && !own) recordVisit(id); }, [id, !!u]); // eslint-disable-line
 
-  if (!u) return <Empty title="প্রোফাইল পাওয়া যায়নি" text="এই ব্যবহারকারী নেই।"><a className="btn primary sm" href="#/feed">Home</a></Empty>;
+  if (!u) return <Empty title="Profile not found" text="This user does not exist."><a className="btn primary sm" href="#/feed">Home</a></Empty>;
   if (!own && isBlocked(s, user.id, id)) {
     const iBlocked = s.blocks.some(([a, b]) => a === user.id && b === id);
-    return <Empty title="এই প্রোফাইল দেখা যাচ্ছে না">{iBlocked && <button className="btn primary sm" onClick={() => { unblockUser(id); toast('আনব্লক করা হয়েছে।'); }}>Unblock {u.name}</button>}</Empty>;
+    return <Empty title="This profile is not available">{iBlocked && <button className="btn primary sm" onClick={() => { unblockUser(id); toast('Unblocked.'); }}>Unblock {u.name}</button>}</Empty>;
   }
 
   const friend = areFriends(s, user.id, id);
@@ -87,11 +277,11 @@ export function Profile({ id }) {
               </>
             ) : (
               <>
-                {friend ? <button className="btn ghost" onClick={() => { unfriend(id); toast('বন্ধু তালিকা থেকে সরানো হয়েছে।'); }}><IoCheckmark /> Friends</button>
+                {friend ? <button className="btn ghost" onClick={() => { unfriend(id); toast('Removed from your friends list.'); }}><IoCheckmark /> Friends</button>
                   : req && req.to === user.id ? <><button className="btn primary" onClick={() => acceptRequest(id)}>Confirm</button><button className="btn ghost" onClick={() => declineRequest(id)}>Delete</button></>
-                  : req ? <button className="btn ghost" onClick={() => { declineRequest(id); toast('অনুরোধ বাতিল।'); }}>Requested · Cancel</button>
-                  : <button className="btn primary" onClick={() => { sendRequest(id); toast('বন্ধুত্বের অনুরোধ পাঠানো হয়েছে।'); }}><IoPersonAdd /> Add Friend</button>}
-                {u.cloud ? <button className="btn ghost" onClick={async () => { const r = await openChatOnline(id); if (r.error) toast(r.error); else go('#/chat/' + r.id); }}><IoChatbubbleEllipses /> Message</button> : <button className="btn ghost" onClick={() => { if (mySettings(s, id).whoCanMessage === 'friends' && !friend) return toast('এই ব্যবহারকারী শুধু বন্ধুদের মেসেজ নেন।'); go('#/chat/' + openChat(id)); }}><IoChatbubbleEllipses /> Message</button>}
+                  : req ? <button className="btn ghost" onClick={() => { declineRequest(id); toast('Request cancelled.'); }}>Requested · Cancel</button>
+                  : <button className="btn primary" onClick={() => { sendRequest(id); toast('Friend request sent.'); }}><IoPersonAdd /> Add Friend</button>}
+                {u.cloud ? <button className="btn ghost" onClick={async () => { const r = await openChatOnline(id); if (r.error) toast(r.error); else go('#/chat/' + r.id); }}><IoChatbubbleEllipses /> Message</button> : <button className="btn ghost" onClick={() => { if (mySettings(s, id).whoCanMessage === 'friends' && !friend) return toast('This user only accepts messages from friends.'); go('#/chat/' + openChat(id)); }}><IoChatbubbleEllipses /> Message</button>}
                 <button className="btn ghost" onClick={() => toggleFollow(id)}>{following ? 'Following' : 'Follow'}</button>
               </>
             )}
@@ -103,12 +293,12 @@ export function Profile({ id }) {
         </div>
       </div>
 
-      {hidden ? <Empty title="এই প্রোফাইল প্রাইভেট" text="শুধু বন্ধুরা এটি দেখতে পারেন।" /> : (
+      {hidden ? <Empty title="This profile is private" text="Only friends can see it." /> : (
         <>
-          {tab === 'posts' && (posts.length ? posts.map((p) => <PostCard key={p.id} post={p} />) : <Empty title="কোনো পোস্ট নেই" />)}
+          {tab === 'posts' && (posts.length ? posts.map((p) => <PostCard key={p.id} post={p} />) : <Empty title="No posts" />)}
           {tab === 'about' && <div className="card pad"><p><b>Name:</b> {u.name}</p><p><b>Username:</b> @{u.username}</p><p><b>Bio:</b> {u.bio || '—'}</p><p><b>Joined:</b> {fullTime(u.created)}</p></div>}
-          {tab === 'friends' && (u.cloud && !own ? <Empty title="বন্ধু তালিকা প্রাইভেট" text="অনলাইনে অন্যের বন্ধু তালিকা দেখা যায় না।" /> : friends.length ? <div className="card pad">{friends.map((f) => <a key={f.id} className="person" href={'#/profile/' + f.id}><Avatar user={f} size={44} /><b>{f.name}</b></a>)}</div> : <Empty title="এখনও কোনো বন্ধু নেই" />)}
-          {tab === 'photos' && (photos.length ? <div className="photo-grid">{photos.map((p) => <img key={p.id} src={p.img} alt="" />)}</div> : <Empty title="কোনো ছবি নেই" />)}
+          {tab === 'friends' && (u.cloud && !own ? <Empty title="Friends list is private" text="Other people's friends lists cannot be viewed online." /> : friends.length ? <div className="card pad">{friends.map((f) => <a key={f.id} className="person" href={'#/profile/' + f.id}><Avatar user={f} size={44} /><b>{f.name}</b></a>)}</div> : <Empty title="No friends yet" />)}
+          {tab === 'photos' && (photos.length ? <div className="photo-grid">{photos.map((p) => <img key={p.id} src={p.img} alt="" />)}</div> : <Empty title="No photos" />)}
         </>
       )}
 
@@ -116,7 +306,7 @@ export function Profile({ id }) {
       {menu && (
         <Sheet title={u.name} onClose={() => setMenu(false)}>
           <button className="menu-item" onClick={() => { setMenu(false); askReport('user', id); }}>Report profile</button>
-          <button className="menu-item danger" onClick={() => { blockUser(id); setMenu(false); toast('ব্লক করা হয়েছে।'); }}>Block {u.name}</button>
+          <button className="menu-item danger" onClick={() => { blockUser(id); setMenu(false); toast('Blocked.'); }}>Block {u.name}</button>
         </Sheet>
       )}
     </div>

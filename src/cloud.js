@@ -86,7 +86,7 @@ export async function uploadProfileImage(meId, kind, dataUrl) {
 }
 export async function patchProfile(meId, patch) {
   const rows = await rest('profiles?id=eq.' + meId, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: patch });
-  if (!rows?.length) throw new Error('প্রোফাইল সেভ হয়নি।');
+  if (!rows?.length) throw new Error('Profile could not be saved.');
   return rows[0];
 }
 export async function searchProfiles(term) {
@@ -136,7 +136,7 @@ export async function loadSocial(meId) {
 }
 export const requestFriend = (meId, to) => rest('friendships', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: { requester_id: meId, addressee_id: to, status: 'pending' } });
 export const acceptFriend = (meId, from) => rest(`friendships?requester_id=eq.${from}&addressee_id=eq.${meId}&status=eq.pending`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: { status: 'accepted' } })
-  .then((rows) => { if (!rows?.length) throw new Error('অনুরোধটি আর নেই।'); });
+  .then((rows) => { if (!rows?.length) throw new Error('This request no longer exists.'); });
 export async function removeFriendship(meId, other) {
   await rest(`friendships?requester_id=eq.${meId}&addressee_id=eq.${other}`, { method: 'DELETE' });
   await rest(`friendships?requester_id=eq.${other}&addressee_id=eq.${meId}`, { method: 'DELETE' });
@@ -163,18 +163,25 @@ export async function loadMedia() {
     rest('reels?select=*&order=created_at.desc&limit=30'),
   ]);
   const rids = reels.map((r) => r.id);
-  const likes = rids.length ? await rest('reel_likes?select=reel_id,user_id&reel_id=' + inList(rids)) : [];
+  const [rx, rcm, rsh] = rids.length ? await Promise.all([
+    rest('reel_reactions?select=reel_id,user_id,type&reel_id=' + inList(rids)),
+    rest('reel_comments?select=id,reel_id,author_id,parent_id,body,created_at&order=created_at.asc&limit=1000&reel_id=' + inList(rids)),
+    rest('reel_shares?select=reel_id&limit=2000&reel_id=' + inList(rids)),
+  ]) : [[], [], []];
   const [sUrls, rUrls] = await Promise.all([
     signUrls('stories', stories.map((x) => x.media_url).filter(Boolean)).catch(() => ({})),
     signUrls('reels', reels.map((x) => x.video_url)).catch(() => ({})),
   ]);
-  const authors = [...new Set([...stories.map((x) => x.author_id), ...reels.map((x) => x.author_id)])];
+  const authors = [...new Set([...stories.map((x) => x.author_id), ...reels.map((x) => x.author_id), ...rcm.map((x) => x.author_id)])];
   const profiles = authors.length ? await rest('profiles?select=*&id=' + inList(authors)) : [];
-  const lk = {}; likes.forEach((l) => { (lk[l.reel_id] ||= []).push(l.user_id); });
+  const rxm = {}; rx.forEach((l) => { (rxm[l.reel_id] ||= {})[l.user_id] = l.type; });
+  const cm = {}; rcm.filter((c) => !c.parent_id).forEach((c) => { (cm[c.reel_id] ||= []).push({ id: c.id, author: c.author_id, text: c.body, time: T(c.created_at), replies: [] }); });
+  rcm.filter((c) => c.parent_id).forEach((c) => { const par = (cm[c.reel_id] || []).find((x) => x.id === c.parent_id); if (par) par.replies.push({ id: c.id, author: c.author_id, text: c.body, time: T(c.created_at) }); });
+  const shn = {}; rsh.forEach((x) => { shn[x.reel_id] = (shn[x.reel_id] || 0) + 1; });
   return {
     profiles,
     stories: stories.map((x) => ({ id: x.id, author: x.author_id, text: x.body, img: x.media_url ? sUrls[x.media_url] || '' : '', bg: x.bg, time: T(x.created_at), cloud: true, mediaPath: x.media_url })),
-    reels: reels.map((x) => ({ id: x.id, author: x.author_id, videoUrl: rUrls[x.video_url] || '', videoPath: x.video_url, caption: x.caption, time: T(x.created_at), likes: lk[x.id] || [], cloud: true })),
+    reels: reels.map((x) => ({ id: x.id, author: x.author_id, videoUrl: rUrls[x.video_url] || '', videoPath: x.video_url, caption: x.caption, time: T(x.created_at), reactions: rxm[x.id] || {}, likes: Object.keys(rxm[x.id] || {}), comments: cm[x.id] || [], shares: shn[x.id] || 0, cloud: true })),
   };
 }
 export async function createStory(meId, { text, imgDataUrl, bg }) {
@@ -190,9 +197,12 @@ export async function createReel(meId, file, caption) {
   catch (e) { removeFiles('reels', [path]); throw e; }
 }
 export const deleteReelOnline = async (r) => { await rest('reels?id=eq.' + r.id, { method: 'DELETE' }); if (r.videoPath) removeFiles('reels', [r.videoPath]); };
-export const setReelLike = (meId, id, on) => on
-  ? rest('reel_likes?on_conflict=reel_id,user_id', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: { reel_id: id, user_id: meId } })
-  : rest(`reel_likes?reel_id=eq.${id}&user_id=eq.${meId}`, { method: 'DELETE' });
+export const setReelReaction = (meId, id, type) => type
+  ? rest('reel_reactions?on_conflict=reel_id,user_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: { reel_id: id, user_id: meId, type } })
+  : rest(`reel_reactions?reel_id=eq.${id}&user_id=eq.${meId}`, { method: 'DELETE' });
+export const createReelComment = (meId, reelId, text, parentId) => rest('reel_comments', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: { reel_id: reelId, author_id: meId, body: text, parent_id: parentId || null } });
+export const deleteReelCommentOnline = (id) => rest('reel_comments?id=eq.' + id, { method: 'DELETE' });
+export const recordReelShare = (meId, reelId) => rest('reel_shares', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: { reel_id: reelId, user_id: meId } });
 
 // ---------- Phase 7/10: messenger (polling; see README) ----------
 export async function loadChats(meId) {
@@ -232,7 +242,7 @@ export async function sendChatMessage(meId, convId, o) {
   let media_url = '';
   const blob = o.blob || (o.dataUrl ? await dataUrlToBlob(o.dataUrl) : null);
   if (blob) {
-    if (blob.size > 25 * 1024 * 1024) throw new Error('ফাইল ২৫ MB-এর বেশি বড়।');
+    if (blob.size > 25 * 1024 * 1024) throw new Error('File is larger than 25 MB.');
     media_url = `${meId}/${rid()}.${mediaExt(blob, o.fileName)}`; await uploadFile('chat', media_url, blob);
   }
   const kind = o.kind || (blob ? 'image' : 'text');
