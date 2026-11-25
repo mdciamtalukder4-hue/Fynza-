@@ -8,7 +8,7 @@ export const go = (path) => { location.hash = path; };
 export const back = (fallback = '#/feed') => { if (history.length > 1) history.back(); else go(fallback); };
 
 // ---------- logo ----------
-export const LOGO_PATHS = ['M30 79 C25 52 36 28 78 21 C70 36 58 38 51 44 C45 49 43 58 43 66 C43 72 38 76 30 79 Z', 'M45 58 C52 50 62 48 73 49 C66 59 56 59 47 66 Z'];
+export const LOGO_PATHS = ['M28 82 C22 60 26 36 48 27 C62 21 76 20 88 17 C83 30 72 35 61 39 C52 43 47 50 46.5 61 C46 72 40 79 28 82 Z', 'M49 55 C59 49 71 47 83 47 C76 56 64 60 51 64 C49 62 48.5 58 49 55 Z'];
 export function LogoMark({ size = 40, flat = false }) {
   const id = 'lg' + size + (flat ? 'f' : '');
   return (
@@ -17,7 +17,7 @@ export function LogoMark({ size = 40, flat = false }) {
         <linearGradient id={id} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#2F7BFF" /><stop offset="1" stopColor="#1C1C9C" /></linearGradient>
       </defs>
       {!flat && <rect width="100" height="100" rx="24" fill={`url(#${id})`} />}
-      <g fill="#fff" stroke="#fff" strokeWidth="3" strokeLinejoin="round">{LOGO_PATHS.map((d) => <path key={d} d={d} />)}</g>
+      <g fill="#fff" stroke="#fff" strokeWidth="1.5" strokeLinejoin="round">{LOGO_PATHS.map((d) => <path key={d} d={d} />)}</g>
     </svg>
   );
 }
