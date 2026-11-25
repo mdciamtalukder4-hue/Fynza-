@@ -34,8 +34,14 @@ jobs:
           npx cap sync android
       - name: Use fixed debug signing key (so updates install over old versions)
         run: |
-          mkdir -p ~/.android
-          cp res/debug.keystore ~/.android/debug.keystore
+          cp res/debug.keystore android/app/fynza.keystore
+          python3 - <<'PY'
+          p='android/app/build.gradle'
+          t=open(p).read()
+          sc="signingConfigs {\n        debug {\n            storeFile file('fynza.keystore')\n            storePassword 'android'\n            keyAlias 'androiddebugkey'\n            keyPassword 'android'\n        }\n    }\n    buildTypes {"
+          assert 'buildTypes {' in t
+          open(p,'w').write(t.replace('buildTypes {',sc,1))
+          PY
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
