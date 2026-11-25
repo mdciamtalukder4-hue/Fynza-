@@ -153,6 +153,7 @@ export function Chat({ id }) {
   const [edit, setEdit] = useState(null);
   const [act, setAct] = useState(null); // message in action sheet
   const [menu, setMenu] = useState(false);
+  const [sq, setSq] = useState(null); // in-chat search text (null = closed)
   const [zoom, setZoom] = useState('');
   const box = useRef(); const end = useRef(); const photo = useRef(); const file = useRef(); const input = useRef();
   const stick = useRef(true);
@@ -217,6 +218,8 @@ export function Chat({ id }) {
   const copy = (m) => { try { navigator.clipboard.writeText(m.text); toast('Copied.'); } catch (e) { toast('Could not copy.'); } setAct(null); };
 
   let lastDay = '';
+  const needle = (sq || '').trim().toLowerCase();
+  const list = needle ? c.msgs.filter((m) => !m.deleted && (m.text || '').toLowerCase().includes(needle)) : c.msgs;
   return (
     <div className="chat v2">
       <div className="chat-top">
@@ -228,11 +231,14 @@ export function Chat({ id }) {
         <button className="icon-btn" aria-label="More" onClick={() => setMenu(true)}><IoEllipsisVertical size={20} /></button>
       </div>
 
+      {sq !== null && <div className="chat-search"><IoSearch size={18} /><input autoFocus placeholder="Search in this chat" value={sq} onChange={(e) => setSq(e.target.value)} /><small className="muted">{needle ? list.length + ' found' : ''}</small><button className="icon-btn" aria-label="Close search" onClick={() => setSq(null)}><IoClose size={20} /></button></div>}
+
       <div className="msgs v2" ref={box} onScroll={onScroll} onClick={() => panel && setPanel('')}>
         {c.msgs.length === 0 && <p className="muted center">Send the first message. 👋</p>}
-        {c.msgs.map((m, i) => {
+        {needle && list.length === 0 && <p className="muted center">No messages match.</p>}
+        {list.map((m, i) => {
           const mine = m.from === user.id; const d = dayLabel(m.time); const sep = d !== lastDay; lastDay = d;
-          const prev = c.msgs[i - 1]; const next = c.msgs[i + 1];
+          const prev = list[i - 1]; const next = list[i + 1];
           const first = !prev || prev.from !== m.from || sep; const lastInGroup = !next || next.from !== m.from || dayLabel(next.time) !== d;
           const rq = m.reply ? byId[m.reply] : null;
           const rx = Object.entries(m.rx || {}); const counts = {}; rx.forEach(([, e]) => { counts[e] = (counts[e] || 0) + 1; });
@@ -321,6 +327,7 @@ export function Chat({ id }) {
       )}
       {menu && (
         <Sheet title={c.group ? c.title : o?.name} onClose={() => setMenu(false)}>
+          <button className="menu-item" onClick={() => { setMenu(false); setSq(''); }}><IoSearch /> Search in chat</button>
           {!c.group && o && <a className="menu-item" href={'#/profile/' + o.id} onClick={() => setMenu(false)}><IoPerson /> View profile</a>}
           {!c.group && o && <button className="menu-item danger" onClick={() => { if (confirm(o.name + ' will be blocked. They will not be able to message or call you.')) { blockUser(o.id); setMenu(false); go('#/messenger'); } }}><IoBan /> Block {o.name.split(' ')[0]}</button>}
           {!c.group && o && <button className="menu-item" onClick={() => { askReport('user', o.id); setMenu(false); }}><IoFlag /> Report user</button>}

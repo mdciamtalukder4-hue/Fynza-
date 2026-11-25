@@ -439,3 +439,7 @@ input[role=switch]:focus-visible~.switch{outline:2px solid var(--blue);outline-o
 .upd-banner{position:fixed;left:8px;right:8px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:9999;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#0B1F6B;color:#fff;padding:10px 12px;border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.3);font-size:14px}
 .upd-banner span{flex:1 1 180px}
 .upd-banner .btn.ghost{color:#fff;border-color:rgba(255,255,255,.5)}
+
+/* chat search */
+.chat-search{display:flex;align-items:center;gap:8px;padding:6px 12px;background:#fff;border-bottom:1px solid #E3E8F5}
+.chat-search input{flex:1;border:0;outline:0;font-size:15px;background:transparent;min-width:0}
