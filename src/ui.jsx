@@ -8,16 +8,16 @@ export const go = (path) => { location.hash = path; };
 export const back = (fallback = '#/feed') => { if (history.length > 1) history.back(); else go(fallback); };
 
 // ---------- logo ----------
-export const LOGO_PATHS = ['M28 82 C22 60 26 36 48 27 C62 21 76 20 88 17 C83 30 72 35 61 39 C52 43 47 50 46.5 61 C46 72 40 79 28 82 Z', 'M49 55 C59 49 71 47 83 47 C76 56 64 60 51 64 C49 62 48.5 58 49 55 Z'];
+export const LOGO_PATHS = ['M 23.0 50.7 C 22.5 36.5 29.9 24.7 46.3 24.4 L 60.2 24.4 C 68.5 24.2 75.0 23.4 79.4 22.1 C 77.5 29.1 74.2 35.6 67.6 38.5 C 62.7 40.6 55.3 40.2 45.5 40.2 C 34.0 40.2 26.6 43.9 23.0 50.7 Z', 'M 68.9 42.8 C 58.6 43.9 43.9 44.3 37.3 48.8 C 29.9 52.9 24.2 57.8 23.0 63.5 C 21.7 67.6 21.2 72.5 21.2 77.8 C 27.5 75.8 32.4 72.5 35.6 66.5 C 38.1 61.1 39.8 59.4 45.5 58.7 C 55.3 57.8 62.7 56.1 65.2 51.2 C 66.8 48.0 68.0 45.5 68.9 42.8 Z'];
 export function LogoMark({ size = 40, flat = false }) {
   const id = 'lg' + size + (flat ? 'f' : '');
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" role="img" aria-label="FYNZA logo">
       <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#2F7BFF" /><stop offset="1" stopColor="#1C1C9C" /></linearGradient>
+        <linearGradient id={id} x1="0" y1="1" x2="1" y2="0"><stop offset="0" stopColor="#2A22D8" /><stop offset=".55" stopColor="#2358F0" /><stop offset="1" stopColor="#14A0FF" /></linearGradient>
       </defs>
       {!flat && <rect width="100" height="100" rx="24" fill={`url(#${id})`} />}
-      <g fill="#fff" stroke="#fff" strokeWidth="1.5" strokeLinejoin="round">{LOGO_PATHS.map((d) => <path key={d} d={d} />)}</g>
+      <g fill="#fff" stroke="#fff" strokeWidth="0" strokeLinejoin="round">{LOGO_PATHS.map((d) => <path key={d} d={d} />)}</g>
     </svg>
   );
 }
