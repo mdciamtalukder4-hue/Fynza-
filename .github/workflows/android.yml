@@ -40,7 +40,11 @@ jobs:
           t=open(p).read()
           sc="signingConfigs {\n        debug {\n            storeFile file('fynza.keystore')\n            storePassword 'android'\n            keyAlias 'androiddebugkey'\n            keyPassword 'android'\n        }\n    }\n    buildTypes {"
           assert 'buildTypes {' in t
-          open(p,'w').write(t.replace('buildTypes {',sc,1))
+          import re
+          t=t.replace('buildTypes {',sc,1)
+          t=re.sub(r'versionCode \d+','versionCode ${{ github.run_number }}',t,count=1)
+          t=re.sub(r'versionName "[^"]*"','versionName "1.0.${{ github.run_number }}"',t,count=1)
+          open(p,'w').write(t)
           PY
       - name: Build debug APK
         working-directory: android
