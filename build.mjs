@@ -16,7 +16,7 @@ const opts = {
   sourcemap: serve,
   loader: { '.jsx': 'jsx', '.js': 'jsx' },
   jsx: 'automatic',
-  define: { 'process.env.NODE_ENV': serve ? '"development"' : '"production"' },
+  define: { 'process.env.NODE_ENV': serve ? '"development"' : '"production"', 'process.env.FYNZA_BUILD': JSON.stringify(process.env.FYNZA_BUILD || '0') },
   logLevel: 'info',
 };
 if (serve) {

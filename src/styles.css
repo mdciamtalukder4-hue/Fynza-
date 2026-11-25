@@ -434,3 +434,8 @@ input[role=switch]:focus-visible~.switch{outline:2px solid var(--blue);outline-o
 .hl-body{flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
 .hl-body img{max-width:100%;max-height:100%;object-fit:contain}
 .hl-cap{position:absolute;left:0;right:0;bottom:0;padding:16px;background:linear-gradient(transparent,rgba(0,0,0,.7));margin:0}
+
+/* update banner */
+.upd-banner{position:fixed;left:8px;right:8px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:9999;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#0B1F6B;color:#fff;padding:10px 12px;border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.3);font-size:14px}
+.upd-banner span{flex:1 1 180px}
+.upd-banner .btn.ghost{color:#fff;border-color:rgba(255,255,255,.5)}

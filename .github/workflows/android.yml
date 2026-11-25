@@ -15,6 +15,8 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 21 }
       - name: Install and build web app
+        env:
+          FYNZA_BUILD: ${{ github.run_number }}
         run: |
           npm install
           npm run build

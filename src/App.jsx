@@ -13,6 +13,7 @@ import { Friends, Reels, MenuPage, Notifications, Visitors, Saved, Settings, Hel
 import { Groups, GroupPage, Pages, PagePage } from './groups.jsx';
 import { Admin } from './admin.jsx';
 import { Market } from './market.jsx';
+import { UpdateBanner } from './update.jsx';
 
 const TABS = [
   ['feed', 'Home', IoHomeOutline, IoHome],
@@ -31,7 +32,7 @@ export default function App() {
   useEffect(() => { window.scrollTo(0, 0); }, [hash]);
   useEffect(() => { if (user?.cloud) { startMessengerSync(); return stopMessengerSync; } return undefined; }, [user?.id, user?.cloud]);
 
-  if (path === 'reset') return <><ResetPassword /><Toaster /></>;
+  if (path === 'reset') return <><ResetPassword /><Toaster /><UpdateBanner /></>;
   // logged-out screens
   if (!user) {
     let v;
@@ -39,7 +40,7 @@ export default function App() {
     else if (path === 'register') v = <Register />;
     else if (path === 'forgot') v = <Forgot />;
     else v = <Welcome />;
-    return <>{v}<Toaster /></>;
+    return <>{v}<Toaster /><UpdateBanner /></>;
   }
 
   let page;
@@ -114,7 +115,7 @@ export default function App() {
       </nav>
       <CallLayer />
       <ReportLayer />
-      <Toaster />
+      <Toaster /><UpdateBanner />
     </div>
   );
 }
