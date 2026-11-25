@@ -6,7 +6,6 @@ import { Head } from './more.jsx';
 import * as api from './marketApi.js';
 
 const msg = (e) => (e && e.message) || 'Something went wrong. Please try again.';
-const REASONS = [['spam', 'Spam / scam / fraud'], ['prohibited', 'Prohibited or illegal item'], ['misleading', 'Misleading listing'], ['harassment', 'Harassment'], ['other', 'Other']];
 
 function Safety() {
   return <div className="mk-safety"><IoShieldCheckmark size={18} /><span>Meet in public places. FYNZA does not process payments.</span></div>;
@@ -115,7 +114,7 @@ function ListingForm({ user, initial, onDone, onCancel }) {
     if (title.length < 3) return toast('Enter a title (at least 3 characters).');
     if (price === '' || isNaN(p) || p < 0) return toast('Enter a valid price (0 for free).');
     if (p > 1e9) return toast('Price is too large.');
-    const f = { title: title.slice(0, 120), description: desc.trim().slice(0, 4000), price_minor: api.toMinor(p, cur), currency: cur, category: cat, condition: cond, location: loc.trim().slice(0, 120) };
+    const f = { title: title.slice(0, 100), description: desc.trim().slice(0, 2000), price_minor: api.toMinor(p, cur), currency: cur, category: cat, condition: cond, location: loc.trim().slice(0, 100) };
     setBusy(true);
     try { const r = ed ? await api.updateListing(user.id, initial, f, keep, add) : await api.createListing(user.id, f, add); toast(ed ? 'Listing updated.' : 'Listing published.'); onDone(r); }
     catch (er) { toast(/rate|too many|limit/i.test(msg(er)) ? 'You are posting too fast. Please try again later.' : msg(er)); setBusy(false); }
@@ -128,7 +127,7 @@ function ListingForm({ user, initial, onDone, onCancel }) {
         {room > 0 && <button type="button" className="mk-ph mk-addph" onClick={() => fi.current.click()}><IoImageOutline size={26} /><small>Add photos ({keep.length + add.length}/{api.MAX_PHOTOS})</small></button>}
         <input ref={fi} type="file" accept="image/jpeg,image/png,image/webp,image/*" multiple hidden onChange={pick} />
       </div>
-      <label>Title<input className="input" maxLength={120} value={t} onChange={(e) => setT(e.target.value)} placeholder="What are you selling?" /></label>
+      <label>Title<input className="input" maxLength={100} value={t} onChange={(e) => setT(e.target.value)} placeholder="What are you selling?" /></label>
       <div className="mk-row">
         <label>Price<input className="input" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value.replace(',', '.'))} placeholder="0 = free" /></label>
         <label>Currency<select className="input" value={cur} onChange={(e) => setCur(e.target.value)}>{api.MARKET_CURRENCIES.map((c) => <option key={c}>{c}</option>)}</select></label>
@@ -137,8 +136,8 @@ function ListingForm({ user, initial, onDone, onCancel }) {
         <label>Category<select className="input" value={cat} onChange={(e) => setCat(e.target.value)}>{api.CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label>
         <label>Condition<select className="input" value={cond} onChange={(e) => setCond(e.target.value)}>{api.CONDITIONS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
       </div>
-      <label>Location<input className="input" maxLength={120} value={loc} onChange={(e) => setLoc(e.target.value)} placeholder="City / area" /></label>
-      <label>Description<textarea className="input" rows={5} maxLength={4000} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Describe the item, its condition, and anything buyers should know." /></label>
+      <label>Location<input className="input" maxLength={100} value={loc} onChange={(e) => setLoc(e.target.value)} placeholder="City / area" /></label>
+      <label>Description<textarea className="input" rows={5} maxLength={2000} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Describe the item, its condition, and anything buyers should know." /></label>
       <Safety />
       <div className="mk-row">{onCancel && <button type="button" className="btn ghost" onClick={onCancel} disabled={busy}>Cancel</button>}<button className="btn primary" disabled={busy}>{busy ? 'Saving…' : ed ? 'Save changes' : 'Publish listing'}</button></div>
     </form>
@@ -193,17 +192,18 @@ function Gallery({ urls, sold }) {
   );
 }
 
+const REASONS = [['spam', 'Spam / scam / fraud'], ['prohibited', 'Prohibited or illegal item'], ['misleading', 'Misleading listing'], ['harassment', 'Harassment'], ['other', 'Other']];
 function ReportSheet({ user, id, onClose }) {
   const [r, setR] = useState('spam'); const [tx, setTx] = useState(''); const [busy, setBusy] = useState(false);
   const send = async () => {
     setBusy(true);
-    try { await api.reportListing(user.id, id, r + (tx.trim() ? ': ' + tx.trim().slice(0, 500) : '')); toast('Report submitted. An admin will review it.'); onClose(); }
+    try { await api.reportListing(user.id, id, r + (tx.trim() ? ': ' + tx.trim().slice(0, 480) : '')); toast('Report submitted. An admin will review it.'); onClose(); }
     catch (e) { toast('Could not send report: ' + msg(e)); setBusy(false); }
   };
   return (
     <Sheet title="Report listing" onClose={onClose}>
       {REASONS.map(([k, l]) => <label key={k} className="toggle-row"><span>{l}</span><input type="radio" name="lr" checked={r === k} onChange={() => setR(k)} /></label>)}
-      <textarea className="input" maxLength={500} placeholder="Add details (optional)" value={tx} onChange={(e) => setTx(e.target.value)} />
+      <textarea className="input" maxLength={480} placeholder="Add details (optional)" value={tx} onChange={(e) => setTx(e.target.value)} />
       <button className="btn danger" disabled={busy} onClick={send}>Send report</button>
     </Sheet>
   );
@@ -277,8 +277,8 @@ function Detail({ id, user }) {
           <button className="btn ghost" onClick={() => setRep(true)}><IoFlag /> Report</button>
         </section>
       )}
-      {edit && <Sheet title="Edit listing" onClose={() => setEdit(false)}><ListingForm user={user} initial={l} onCancel={() => setEdit(false)} onDone={(r) => { setEdit(false); setL(r); api.photoUrls(r.photos).then(setUrls); }} /></Sheet>}
       {rep && <ReportSheet user={user} id={id} onClose={() => setRep(false)} />}
+      {edit && <Sheet title="Edit listing" onClose={() => setEdit(false)}><ListingForm user={user} initial={l} onCancel={() => setEdit(false)} onDone={(r) => { setEdit(false); setL(r); api.photoUrls(r.photos).then(setUrls); }} /></Sheet>}
     </>
   );
 }

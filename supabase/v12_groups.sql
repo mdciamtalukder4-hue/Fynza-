@@ -8,7 +8,6 @@ alter table public.groups add column if not exists cover_url text not null defau
 alter table public.groups add column if not exists avatar_url text not null default '';
 alter table public.groups add column if not exists rules text not null default '';
 alter table public.groups add column if not exists approval_required boolean not null default false;
-alter table public.groups add column if not exists post_approval boolean not null default false;
 do $$ begin
   begin alter table public.groups add constraint groups_rules_len check (char_length(rules) <= 1000); exception when duplicate_object then null; end;
   begin alter table public.groups add constraint groups_img_len check (char_length(cover_url) <= 500 and char_length(avatar_url) <= 500); exception when duplicate_object then null; end;
@@ -23,7 +22,6 @@ end $$;
 alter table public.group_members add column if not exists muted_until timestamptz;
 
 alter table public.posts add column if not exists pinned_in_group boolean not null default false;
-alter table public.posts add column if not exists group_pending boolean not null default false;
 
 create table if not exists public.group_join_requests (
   id uuid primary key default gen_random_uuid(),
@@ -92,24 +90,14 @@ update public.groups set approval_required = true where privacy = 'private';
 -- ---------- posts: pinned / pending can only be changed by group staff ----------
 create or replace function public.posts_group_guard() returns trigger
 language plpgsql security definer set search_path = public as $$
-declare g public.groups%rowtype;
 begin
   if tg_op = 'INSERT' then
-    new.pinned_in_group := false; new.group_pending := false;
-    if new.group_id is not null then
-      select * into g from public.groups where id = new.group_id;
-      if g.post_approval and not public.is_group_mod(new.group_id, new.author_id) then new.group_pending := true; end if;
-    end if;
+    new.pinned_in_group := false;
     return new;
   end if;
   if new.group_id is distinct from old.group_id then raise exception 'a post cannot be moved to another group'; end if;
-  if auth.uid() is not null then
-    if new.pinned_in_group is distinct from old.pinned_in_group and not public.is_group_admin(old.group_id, auth.uid()) then
-      raise exception 'only group admins can pin posts';
-    end if;
-    if new.group_pending is distinct from old.group_pending and not public.is_group_mod(old.group_id, auth.uid()) then
-      raise exception 'only group staff can approve posts';
-    end if;
+  if auth.uid() is not null and new.pinned_in_group is distinct from old.pinned_in_group and not public.is_group_admin(old.group_id, auth.uid()) then
+    raise exception 'only group admins can pin posts';
   end if;
   return new;
 end $$;
@@ -126,8 +114,7 @@ language sql stable security definer set search_path = public as $$
       and not public.is_blocked(viewer, p.author_id)
       and (
         p.author_id = viewer
-        or (p.group_id is not null and (public.is_group_member(p.group_id, viewer) or public.group_is_public(p.group_id))
-            and (not p.group_pending or public.is_group_mod(p.group_id, viewer)))
+        or (p.group_id is not null and (public.is_group_member(p.group_id, viewer) or public.group_is_public(p.group_id)))
         or (p.group_id is null and (
               (p.audience = 'public' and (a.is_public or public.is_friend(viewer, p.author_id)))
            or (p.audience = 'friends' and public.is_friend(viewer, p.author_id))))
@@ -289,7 +276,7 @@ begin
 end $$;
 
 create or replace function public.update_group(p_group uuid, p_name text default null, p_description text default null, p_rules text default null,
-  p_privacy text default null, p_cover text default null, p_avatar text default null, p_approval boolean default null, p_post_approval boolean default null) returns void
+  p_privacy text default null, p_cover text default null, p_avatar text default null, p_approval boolean default null) returns void
 language plpgsql security definer set search_path = public as $$
 begin
   if auth.uid() is null then raise exception 'not logged in'; end if;
@@ -303,8 +290,7 @@ begin
     privacy = coalesce(p_privacy, privacy),
     cover_url = coalesce(p_cover, cover_url),
     avatar_url = coalesce(p_avatar, avatar_url),
-    approval_required = coalesce(p_approval, approval_required),
-    post_approval = coalesce(p_post_approval, post_approval)
+    approval_required = coalesce(p_approval, approval_required)
   where id = p_group;
 end $$;
 
@@ -330,23 +316,6 @@ begin
   if not public.is_group_admin(g, auth.uid()) then raise exception 'only group admins can pin posts'; end if;
   if p_pinned then update public.posts set pinned_in_group = false where group_id = g and pinned_in_group; end if;
   update public.posts set pinned_in_group = p_pinned where id = p_post;
-end $$;
-
-create or replace function public.decide_group_post(p_post uuid, p_approve boolean) returns void
-language plpgsql security definer set search_path = public as $$
-declare p record; me uuid := auth.uid(); nm text;
-begin
-  select id, author_id, group_id, group_pending into p from public.posts where id = p_post;
-  if not found or p.group_id is null or not p.group_pending then raise exception 'post is not waiting for approval'; end if;
-  if not public.is_group_mod(p.group_id, me) then raise exception 'only group staff can review posts'; end if;
-  nm := public._gname(p.group_id);
-  if p_approve then
-    update public.posts set group_pending = false where id = p_post;
-    insert into public.notifications (user_id, actor_id, type, post_id, text) values (p.author_id, me, 'system', p_post, 'approved your post in "' || nm || '".');
-  else
-    delete from public.posts where id = p_post;
-    insert into public.notifications (user_id, actor_id, type, text) values (p.author_id, me, 'system', 'declined your post in "' || nm || '".');
-  end if;
 end $$;
 
 -- discovery / details (private groups expose ONLY name, privacy, description, images, member count)
@@ -385,7 +354,7 @@ begin
     'request_status', (select r.status from public.group_join_requests r where r.group_id = p_group and r.user_id = me),
     'can_see', seeing,
     'rules', case when seeing then g.rules else '' end,
-    'approval_required', g.approval_required, 'post_approval', g.post_approval);
+    'approval_required', g.approval_required);
 end $$;
 
 -- grants
@@ -393,10 +362,14 @@ do $$ declare f text; begin
   foreach f in array array[
     'request_join_group(uuid,text)','cancel_join_request(uuid)','decide_join_request(uuid,boolean)','set_member_role(uuid,uuid,text)',
     'remove_group_member(uuid,uuid,boolean)','unban_group_member(uuid,uuid)','mute_group_member(uuid,uuid,int)','leave_group(uuid)',
-    'update_group(uuid,text,text,text,text,text,text,boolean,boolean)','delete_group_post(uuid)','pin_group_post(uuid,boolean)',
-    'decide_group_post(uuid,boolean)','list_groups(text)','group_detail(uuid)','add_group_member(uuid,uuid)'] loop
+    'update_group(uuid,text,text,text,text,text,text,boolean)','delete_group_post(uuid)','pin_group_post(uuid,boolean)',
+'list_groups(text)','group_detail(uuid)','add_group_member(uuid,uuid)'] loop
     execute format('revoke all on function public.%s from public, anon', f);
     execute format('grant execute on function public.%s to authenticated', f);
   end loop;
 end $$;
 revoke all on function public._gname(uuid), public.posts_group_guard(), public.groups_force_approval() from public, anon, authenticated;
+revoke all on function public.group_role(uuid,uuid), public.is_group_mod(uuid,uuid), public.is_group_admin(uuid,uuid), public.is_group_banned(uuid,uuid),
+  public.group_open_join(uuid), public.group_is_muted(uuid,uuid), public.group_rank(text) from public, anon;
+grant execute on function public.group_role(uuid,uuid), public.is_group_mod(uuid,uuid), public.is_group_admin(uuid,uuid), public.is_group_banned(uuid,uuid),
+  public.group_open_join(uuid), public.group_is_muted(uuid,uuid), public.group_rank(text) to authenticated;

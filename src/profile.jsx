@@ -61,7 +61,7 @@ function VisSelect({ id, value, onChange }) {
   return <select id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)}>{api.VIS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>;
 }
 function EditDetails({ meId, d, onSaved, onClose }) {
-  const [f, setF] = useState({ work: '', education: '', current_city: '', hometown: '', relationship: '', website: '', birthday: '', details_visibility: 'public', friends_visibility: 'public', ...(d || {}), birthday: d?.birthday || '' });
+  const [f, setF] = useState({ work: '', education: '', current_city: '', hometown: '', relationship: '', website: '', details_visibility: 'public', friends_visibility: 'public', ...(d || {}), birthday: d?.birthday || '' });
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const save = async () => {
@@ -229,17 +229,52 @@ const copyText = async (t) => {
   try { const a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select(); const ok = document.execCommand('copy'); a.remove(); return ok; } catch (e) { return false; }
 };
 
+function FriendsTab({ id, own, u, s, friends }) {
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState(false);
+  const online = !!u.cloud;
+  useEffect(() => {
+    if (!online) return undefined;
+    let on = true; setRows(null); setErr(false);
+    api.loadFriends(id).then((r) => on && setRows(Array.isArray(r) ? r : [])).catch(() => on && setErr(true));
+    return () => { on = false; };
+  }, [id, online]);
+  let list = friends;
+  if (online) {
+    if (err) return <Empty title="Friends list is private" text="This person has limited who can see their friends." />;
+    if (rows === null) return <p className="muted pad">Loading…</p>;
+    list = rows.map((r) => { const fid = r.id || r.user_id || r.friend_id; const k = s.users[fid]; return { id: fid, name: r.name || k?.name || 'User', username: r.username || k?.username, avatar: r.avatar_url || r.avatar || k?.avatar, cloud: true }; }).filter((x) => x.id);
+  }
+  if (!list.length) return <Empty title={own ? 'No friends yet' : 'Nothing to show'} text={online && !own ? 'No friends to show, or the list is private.' : undefined} />;
+  return <div className="card pad">{list.map((f) => <a key={f.id} className="person" href={'#/profile/' + f.id}><Avatar user={f} size={44} /><b>{f.name}</b></a>)}</div>;
+}
+
 export function Profile({ id }) {
   const s = useStore();
   const user = me(s);
   const u = s.users[id];
   const own = id === user.id;
+  const online = !!user.cloud && !!u?.cloud;
   const [tab, setTab] = useState('posts');
   const [edit, setEdit] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [editD, setEditD] = useState(false);
+  const [viewSet, setViewSet] = useState(false);
+  const [pro, setPro] = useState(false);
+  const [flags, setFlags] = useState({ locked: false, pro: false, cat: '' });
+  const [flagsOk, setFlagsOk] = useState(false);
+  const [details, setDetails] = useState(null);
 
   useEffect(() => { if (!u) fetchUserOnline(id); else if (u.cloud) loadProfileExtras(id); }, [id, !!u]); // eslint-disable-line
   useEffect(() => { if (u && !own) recordVisit(id); }, [id, !!u]); // eslint-disable-line
+  useEffect(() => {
+    setFlagsOk(false); setFlags({ locked: false, pro: false, cat: '' }); setDetails(null);
+    if (!online) { setFlagsOk(true); return undefined; }
+    let on = true;
+    api.loadFlags(id).then((f) => { if (on) { setFlags(f); setFlagsOk(true); } }).catch(() => on && setFlagsOk(true));
+    api.loadDetails(id).then((d) => on && setDetails(d)).catch(() => {});
+    return () => { on = false; };
+  }, [id, online]);
 
   if (!u) return <Empty title="Profile not found" text="This user does not exist."><a className="btn primary sm" href="#/feed">Home</a></Empty>;
   if (!own && isBlocked(s, user.id, id)) {
@@ -250,63 +285,100 @@ export function Profile({ id }) {
   const friend = areFriends(s, user.id, id);
   const req = requestBetween(s, user.id, id);
   const following = s.follows.some(([a, b]) => a === user.id && b === id);
+  const locked = !own && !friend && online && flags.locked;
   const hidden = !own && mySettings(s, id).profilePublic === false && !friend;
   const posts = s.posts.filter((p) => p.author === id && canSee(s, p) && !p.groupId);
   const friends = s.friends.filter(([a, b]) => a === id || b === id).map(([a, b]) => s.users[a === id ? b : a]).filter(Boolean);
   const followers = s.follows.filter(([, b]) => b === id).length;
   const photos = posts.filter((p) => p.img);
+  const reels = s.reels.filter((r) => r.author === id && !!r.cloud === !!user.cloud);
   const visits = own ? visitsOfMe(s).length : 0;
+  const tabs = ['posts', 'about', 'friends', 'photos', 'reels'];
+  const toggleLock = async () => {
+    const next = !flags.locked;
+    try { await api.setLock(next); setFlags({ ...flags, locked: next }); toast(next ? 'Profile locked.' : 'Profile unlocked.'); }
+    catch (e) { toast('Could not change lock: ' + e.message); }
+  };
+
+  const actions = own ? (
+    <>
+      <button className="btn primary" onClick={() => setEdit(true)}>Edit profile</button>
+      <a className="btn ghost" href="#/visitors"><IoEye /> Who viewed my profile{visits > 0 && <i className="count">{visits}</i>}</a>
+    </>
+  ) : (
+    <>
+      {friend ? <button className="btn ghost" onClick={() => { unfriend(id); toast('Removed from your friends list.'); }}><IoCheckmark /> Friends</button>
+        : req && req.to === user.id ? <><button className="btn primary" onClick={() => acceptRequest(id)}>Confirm</button><button className="btn ghost" onClick={() => declineRequest(id)}>Delete</button></>
+        : req ? <button className="btn ghost" onClick={() => { declineRequest(id); toast('Request cancelled.'); }}>Requested · Cancel</button>
+        : <button className="btn primary" onClick={() => { sendRequest(id); toast('Friend request sent.'); }}><IoPersonAdd /> Add Friend</button>}
+      {!locked && (u.cloud ? <button className="btn ghost" onClick={async () => { const r = await openChatOnline(id); if (r.error) toast(r.error); else go('#/chat/' + r.id); }}><IoChatbubbleEllipses /> Message</button> : <button className="btn ghost" onClick={() => { if (mySettings(s, id).whoCanMessage === 'friends' && !friend) return toast('This user only accepts messages from friends.'); go('#/chat/' + openChat(id)); }}><IoChatbubbleEllipses /> Message</button>)}
+      {!locked && <button className="btn ghost" onClick={() => toggleFollow(id)}>{following ? 'Following' : 'Follow'}</button>}
+    </>
+  );
 
   return (
     <div className="stack">
       <div className="profile-head card">
         <div className="cover" style={u.cover ? { background: `center/cover url(${u.cover})` } : undefined}>
           <button className="icon-btn dark" aria-label="Back" onClick={() => back()}><IoArrowBack size={22} /></button>
-          {!own && <button className="icon-btn dark right" aria-label="More" onClick={() => setMenu(true)}><IoEllipsisHorizontal size={22} /></button>}
+          <button className="icon-btn dark right" aria-label="More" onClick={() => setMenu(true)}><IoEllipsisHorizontal size={22} /></button>
         </div>
         <div className="p-info">
           <div className="p-avatar"><Avatar user={u} size={112} /></div>
-          <h1>{u.name}<Badge on={u.verified} size={22} /></h1>
+          <h1>{u.name}<Badge on={u.verified} size={22} />{online && flags.locked && <span className="pv2-lock"><IoLockClosed size={12} /> Locked</span>}</h1>
           <p className="muted">@{u.username}</p>
-          {u.bio && <p className="bio">{u.bio}</p>}
-          <div className="p-actions">
-            {own ? (
-              <>
-                <button className="btn primary" onClick={() => setEdit(true)}>Edit profile</button>
-                <a className="btn ghost" href="#/visitors"><IoEye /> Who viewed my profile{visits > 0 && <i className="count">{visits}</i>}</a>
-              </>
-            ) : (
-              <>
-                {friend ? <button className="btn ghost" onClick={() => { unfriend(id); toast('Removed from your friends list.'); }}><IoCheckmark /> Friends</button>
-                  : req && req.to === user.id ? <><button className="btn primary" onClick={() => acceptRequest(id)}>Confirm</button><button className="btn ghost" onClick={() => declineRequest(id)}>Delete</button></>
-                  : req ? <button className="btn ghost" onClick={() => { declineRequest(id); toast('Request cancelled.'); }}>Requested · Cancel</button>
-                  : <button className="btn primary" onClick={() => { sendRequest(id); toast('Friend request sent.'); }}><IoPersonAdd /> Add Friend</button>}
-                {u.cloud ? <button className="btn ghost" onClick={async () => { const r = await openChatOnline(id); if (r.error) toast(r.error); else go('#/chat/' + r.id); }}><IoChatbubbleEllipses /> Message</button> : <button className="btn ghost" onClick={() => { if (mySettings(s, id).whoCanMessage === 'friends' && !friend) return toast('This user only accepts messages from friends.'); go('#/chat/' + openChat(id)); }}><IoChatbubbleEllipses /> Message</button>}
-                <button className="btn ghost" onClick={() => toggleFollow(id)}>{following ? 'Following' : 'Follow'}</button>
-              </>
-            )}
-          </div>
-          <div className="p-stats"><span><b>{posts.length}</b> Posts</span>{(own || !u.cloud) && <span><b>{friends.length}</b> Friends</span>}<span><b>{followers}</b> Followers</span></div>
+          {online && flags.pro && flags.cat && !locked && <p className="pv2-cat"><IoBriefcase size={13} /> {flags.cat}</p>}
+          {!locked && u.bio && <p className="bio">{u.bio}</p>}
+          <div className="p-actions">{actions}</div>
+          {!locked && <div className="p-stats"><span><b>{posts.length}</b> Posts</span>{(own || !u.cloud) && <span><b>{friends.length}</b> Friends</span>}<span><b>{followers}</b> Followers</span></div>}
         </div>
-        <div className="tabs" role="tablist">
-          {['posts', 'about', 'friends', 'photos'].map((t) => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}
-        </div>
+        {!locked && <div className="tabs" role="tablist">
+          {tabs.map((t) => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}
+        </div>}
       </div>
 
-      {hidden ? <Empty title="This profile is private" text="Only friends can see it." /> : (
-        <>
-          {tab === 'posts' && (posts.length ? posts.map((p) => <PostCard key={p.id} post={p} />) : <Empty title="No posts" />)}
-          {tab === 'about' && <div className="card pad"><p><b>Name:</b> {u.name}</p><p><b>Username:</b> @{u.username}</p><p><b>Bio:</b> {u.bio || '—'}</p><p><b>Joined:</b> {fullTime(u.created)}</p></div>}
-          {tab === 'friends' && (u.cloud && !own ? <Empty title="Friends list is private" text="Other people's friends lists cannot be viewed online." /> : friends.length ? <div className="card pad">{friends.map((f) => <a key={f.id} className="person" href={'#/profile/' + f.id}><Avatar user={f} size={44} /><b>{f.name}</b></a>)}</div> : <Empty title="No friends yet" />)}
-          {tab === 'photos' && (photos.length ? <div className="photo-grid">{photos.map((p) => <img key={p.id} src={p.img} alt="" />)}</div> : <Empty title="No photos" />)}
-        </>
-      )}
+      {locked ? <div className="card pad pv2-locked"><IoLockClosed size={28} /><b>This profile is locked</b><p className="muted">Only friends can see what {u.name} shares. Send a friend request to connect.</p></div>
+        : hidden ? <Empty title="This profile is private" text="Only friends can see it." /> : (
+          <>
+            {online && flagsOk && <Highlights userId={id} own={own} />}
+            {tab === 'posts' && (posts.length ? posts.map((p) => <PostCard key={p.id} post={p} />) : <Empty title="No posts" />)}
+            {tab === 'about' && (
+              <>
+                <div className="card pad"><p><b>Name:</b> {u.name}</p><p><b>Username:</b> @{u.username}</p><p><b>Bio:</b> {u.bio || '—'}</p><p><b>Joined:</b> {fullTime(u.created)}</p></div>
+                {online && <DetailsCard d={details} own={own} onEdit={() => setEditD(true)} />}
+              </>
+            )}
+            {tab === 'friends' && <FriendsTab id={id} own={own} u={u} s={s} friends={friends} />}
+            {tab === 'photos' && (photos.length ? <div className="photo-grid">{photos.map((p) => <img key={p.id} src={p.img} alt="" />)}</div> : <Empty title="No photos" />)}
+            {tab === 'reels' && (reels.length ? <div className="pv2-reels">{reels.map((r) => <a key={r.id} className="pv2-reel" href={'#/reels/' + r.id}><IoPlay size={22} /><span>{r.caption || 'Reel'}</span></a>)}</div> : <Empty title="No reels" />)}
+          </>
+        )}
 
       {edit && <EditProfile user={u} onClose={() => setEdit(false)} />}
+      {editD && <EditDetails meId={user.id} d={details} onSaved={setDetails} onClose={() => setEditD(false)} />}
+      {viewSet && <ViewSettings meId={user.id} d={details} onSaved={setDetails} onClose={() => setViewSet(false)} />}
+      {pro && <ProSheet meId={user.id} flags={flags} onChange={setFlags} onClose={() => setPro(false)} />}
       {menu && (
         <Sheet title={u.name} onClose={() => setMenu(false)}>
-          <button className="menu-item" onClick={() => { setMenu(false); askReport('user', id); }}>Report profile</button>
-          <button className="menu-item danger" onClick={() => { blockUser(id); setMenu(false); toast('Blocked.'); }}>Block {u.name}</button>
+          {own ? (
+            <>
+              <button className="menu-item" onClick={() => { setMenu(false); setEdit(true); }}>Edit profile</button>
+              {user.cloud ? (
+                <>
+                  <button className="menu-item" onClick={() => { setMenu(false); setEditD(true); }}>Edit details</button>
+                  <button className="menu-item" onClick={() => { setMenu(false); toggleLock(); }}>{flags.locked ? 'Unlock profile' : 'Lock profile'}</button>
+                  <button className="menu-item" onClick={() => { setMenu(false); setPro(true); }}>Professional mode: {flags.pro ? 'On' : 'Off'}</button>
+                  <button className="menu-item" onClick={() => { setMenu(false); setViewSet(true); }}>Profile view settings</button>
+                </>
+              ) : <div className="pad"><LocalOnly what="Profile lock, Professional mode and details" /></div>}
+              <a className="menu-item" href="#/privacy-checkup" onClick={() => setMenu(false)}>Privacy Checkup</a>
+            </>
+          ) : (
+            <>
+              <button className="menu-item" onClick={() => { setMenu(false); askReport('user', id); }}>Report profile</button>
+              <button className="menu-item danger" onClick={() => { blockUser(id); setMenu(false); toast('Blocked.'); }}>Block {u.name}</button>
+            </>
+          )}
         </Sheet>
       )}
     </div>

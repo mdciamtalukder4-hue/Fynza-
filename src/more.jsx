@@ -198,6 +198,7 @@ export function MenuPage() {
     ['Reels', '#/reels', IoPlayCircle, '#EA580C'],
     ['Marketplace', '#/market', IoStorefront, '#0891B2'],
     ['Saved', '#/saved', IoBookmark, '#4F46E5'],
+    ['Privacy Checkup', '#/privacy-checkup', IoShieldCheckmark, '#16A34A'],
     ['Who viewed my profile', '#/visitors', IoEye, '#0EA5E9'],
     ...(user.cloud && user.role === 'admin' ? [['Admin dashboard', '#/admin', IoShieldCheckmark, '#7C3AED']] : []),
     ['Verified, Ads & Creators', '#/earn', IoShieldCheckmark, '#1D4ED8'],

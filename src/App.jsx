@@ -4,7 +4,8 @@ import { useStore, me } from './store.js';
 import { useHash, go, Avatar, Wordmark, LogoMark, Toaster } from './ui.jsx';
 import { Welcome, Login, Register, Forgot, ResetPassword } from './auth.jsx';
 import { SecurityPage, VerifyPage, AdsPage, CreatorPage, MoneyHub, ReportLayer } from './monet.jsx';
-import { Feed, SideRail } from './feed.jsx';
+import { Feed, SideRail, PostPage } from './feed.jsx';
+import { PrivacyCheckup } from './specials.jsx';
 import { Profile } from './profile.jsx';
 import { Messenger, Chat, CallLayer } from './messenger.jsx';
 import { startMessengerSync, stopMessengerSync } from './msgx.js';
@@ -55,6 +56,8 @@ export default function App() {
     case 'saved': page = <Saved />; break;
     case 'admin': page = <Admin />; break;
     case 'market': page = <Market />; break;
+    case 'post': page = <PostPage id={arg} />; break;
+    case 'privacy-checkup': page = <PrivacyCheckup />; break;
     case 'pages': page = <Pages />; break;
     case 'group': page = <GroupPage id={arg} />; break;
     case 'page': page = <PagePage id={arg} />; break;

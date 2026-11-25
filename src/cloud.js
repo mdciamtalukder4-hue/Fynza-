@@ -8,23 +8,38 @@ export const toUser = (p, prev = {}) => ({
   email: prev.email || '', created: T(p.created_at), cloud: true, hash: '', role: p.role || prev.role || 'user', banned: !!p.banned, verified: !!p.verified, country: p.country || '',
 });
 
-export async function loadFeed(meId) {
-  const posts = await rest('posts?select=*&order=created_at.desc&limit=60');
+export async function loadFeed(meId, limit = 30, extraIds = []) {
+  const [page, sched] = await Promise.all([
+    rest('posts?select=*&order=created_at.desc&limit=' + limit),
+    rest(`posts?select=*&author_id=eq.${meId}&publish_at=not.is.null&order=publish_at.desc&limit=50`).catch(() => []),
+  ]);
+  const eff = (p) => T(p.publish_at || p.created_at);
+  const seen = new Set();
+  let posts = [...page, ...sched].filter((p) => !seen.has(p.id) && seen.add(p.id)).sort((x, y) => eff(y) - eff(x));
+  const have = new Set(posts.map((p) => p.id));
+  const need = [...new Set([...posts.map((p) => p.shared_post_id).filter(Boolean), ...extraIds])].filter((x) => !have.has(x));
+  const extras = need.length ? await rest('posts?select=*&id=' + inList(need)).catch(() => []) : [];
+  extras.forEach((p) => { p.__extra = true; });
+  posts = [...posts, ...extras];
   const ids = posts.map((p) => p.id);
   const authorIds = [...new Set([meId, ...posts.map((p) => p.author_id)])];
-  const [profiles, reactions, comments, saved] = await Promise.all([
+  const [profiles, reactions, comments, saved, sharesRows] = await Promise.all([
     rest('profiles?select=*&id=' + inList(authorIds)),
     ids.length ? rest('post_reactions?select=post_id,user_id,type&post_id=' + inList(ids)) : [],
     ids.length ? rest('comments?select=*&order=created_at.asc&post_id=' + inList(ids)) : [],
     rest('saved_posts?select=post_id&user_id=eq.' + meId),
+    ids.length ? rest('posts?select=shared_post_id&shared_post_id=' + inList(ids)).catch(() => []) : [],
   ]);
+  const clikes = comments.length ? await rest('comment_likes?select=comment_id,user_id&comment_id=' + inList(comments.map((c) => c.id))).catch(() => []) : [];
   const commenters = [...new Set(comments.map((c) => c.author_id))].filter((x) => !authorIds.includes(x));
   const extra = commenters.length ? await rest('profiles?select=*&id=' + inList(commenters)) : [];
   const urls = await signUrls('posts', posts.map((p) => p.media_url).filter(Boolean)).catch(() => ({}));
 
   const rx = {}; reactions.forEach((r) => { (rx[r.post_id] ||= {})[r.user_id] = r.type; });
+  const lk = {}; clikes.forEach((l) => { (lk[l.comment_id] ||= []).push(l.user_id); });
+  const shares = {}; sharesRows.forEach((r) => { shares[r.shared_post_id] = (shares[r.shared_post_id] || 0) + 1; });
   const byPost = {}; comments.forEach((c) => (byPost[c.post_id] ||= []).push(c));
-  const toC = (c) => ({ id: c.id, author: c.author_id, text: c.body, time: T(c.created_at), replies: [] });
+  const toC = (c) => ({ id: c.id, author: c.author_id, text: c.body, time: T(c.created_at), replies: [], likes: lk[c.id] || [] });
   const nest = (list = []) => {
     const top = list.filter((c) => !c.parent_id).map(toC);
     const map = Object.fromEntries(top.map((c) => [c.id, c]));
@@ -33,8 +48,10 @@ export async function loadFeed(meId) {
   };
   return {
     users: [...profiles, ...extra],
+    more: page.length >= limit,
     posts: posts.map((p) => ({
-      id: p.id, author: p.author_id, text: p.body, time: T(p.created_at), aud: p.audience, cloud: true, shareOf: p.shared_post_id || undefined,
+      id: p.id, author: p.author_id, text: p.body, time: eff(p), aud: p.audience, cloud: true, shareOf: p.shared_post_id || undefined,
+      sched: p.publish_at && T(p.publish_at) > Date.now() ? T(p.publish_at) : undefined, extra: p.__extra || undefined, shares: shares[p.id] || 0,
       img: p.media_type === 'image' ? urls[p.media_url] || '' : '', videoUrl: p.media_type === 'video' ? urls[p.media_url] || '' : '',
       mediaPath: p.media_url, reactions: rx[p.id] || {}, comments: nest(byPost[p.id]), groupId: p.group_id || undefined, pageId: p.page_id || undefined,
     })),
@@ -46,7 +63,7 @@ const rid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toStr
 const dataUrlToBlob = async (d) => (await fetch(d)).blob();
 const ext = (type) => ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov' }[type] || 'bin');
 
-export async function createPost(meId, { text, imgDataUrl, videoFile, aud, sharedId, groupId, pageId }) {
+export async function createPost(meId, { text, imgDataUrl, videoFile, aud, sharedId, groupId, pageId, publishAt }) {
   let media_url = '', media_type = '';
   if (imgDataUrl) {
     const b = await dataUrlToBlob(imgDataUrl); media_url = `${meId}/${rid()}.${ext(b.type)}`; media_type = 'image';
@@ -56,7 +73,7 @@ export async function createPost(meId, { text, imgDataUrl, videoFile, aud, share
     await uploadFile('posts', media_url, videoFile);
   }
   try {
-    await rest('posts', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: { author_id: meId, body: text || '', media_url, media_type, audience: aud || 'public', shared_post_id: sharedId || null, group_id: groupId || null, page_id: pageId || null } });
+    await rest('posts', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: { author_id: meId, body: text || '', media_url, media_type, audience: aud || 'public', shared_post_id: sharedId || null, group_id: groupId || null, page_id: pageId || null, ...(publishAt ? { publish_at: new Date(publishAt).toISOString() } : {}) } });
   } catch (e) { if (media_url) removeFiles('posts', [media_url]); throw e; }
 }
 export const deletePostOnline = async (post) => {
@@ -358,3 +375,12 @@ export const adminReviewCreator = (u, ok, note) => rpcP('admin_review_creator', 
 export const adminPaymentMethods = () => rest('payment_methods?select=*&order=sort.asc');
 export const adminSettings = () => rest('app_settings?select=key,value');
 export const adminWarnings = () => rpcP('admin_warnings');
+
+// ---------- feed v2 ----------
+export const publishPostNow = (id) => rest('posts?id=eq.' + id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: { publish_at: null } });
+export const deleteCommentOnline = (id) => rest('comments?id=eq.' + id, { method: 'DELETE' });
+export const setCommentLike = (meId, cid, on) => on
+  ? rest('comment_likes', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: { comment_id: cid, user_id: meId } }).catch((e) => { if (e.status === 409 || /duplicate key/i.test(e.message)) return; throw e; })
+  : rest(`comment_likes?comment_id=eq.${cid}&user_id=eq.${meId}`, { method: 'DELETE' });
+export const profilesByIds = (ids) => ids.length ? rest('profiles?select=*&id=' + inList(ids)) : Promise.resolve([]);
+export const setProfileLock = (lock) => rest('rpc/set_profile_lock', { method: 'POST', body: { p_lock: !!lock } });

@@ -123,12 +123,15 @@ function adopt(profile, email) {
   refreshAll();
 }
 let refreshing = null;
+let feedLimit = 30;
+const extraIds = new Set();
 // Reload feed, authors, reactions, comments and saved posts from the online database
 export function refreshFeed() {
   const meId = state.me;
   if (!meId || !state.users[meId]?.cloud) return Promise.resolve();
   if (refreshing) return refreshing.then(() => refreshFeed()); // a refresh started earlier may not contain the newest change
-  refreshing = cloud.loadFeed(meId).then((d) => set((s) => {
+  refreshing = cloud.loadFeed(meId, feedLimit, [...extraIds]).then((d) => set((s) => {
+    s.feedMore = d.more;
     const users = { ...s.users };
     d.users.forEach((p) => { users[p.id] = cloud.toUser(p, users[p.id]); });
     s.users = users;
@@ -136,6 +139,14 @@ export function refreshFeed() {
     s.saved = { ...s.saved, [meId]: d.saved };
   })).catch((e) => errorHandler('Could not load feed: ' + e.message)).finally(() => { refreshing = null; });
   return refreshing;
+}
+export const loadMoreFeed = () => { feedLimit += 30; return refreshFeed(); };
+export const openPostOnline = (id) => { if (state.posts.some((p) => p.id === id) || !state.users[state.me]?.cloud) return Promise.resolve(); extraIds.add(id); return refreshFeed(); };
+export async function ensureUsers(ids) {
+  if (!state.users[state.me]?.cloud) return;
+  const miss = [...new Set(ids)].filter((i) => i && !state.users[i]);
+  if (!miss.length) return;
+  try { const rows = await cloud.profilesByIds(miss); set((s) => { const u = { ...s.users }; rows.forEach((p) => { u[p.id] = cloud.toUser(p, u[p.id]); }); s.users = u; }); } catch (e) { /* ignore */ }
 }
 const pendingW = new Set();
 const track = (p) => { pendingW.add(p); const d = () => pendingW.delete(p); p.then(d, d); return p; };
@@ -505,6 +516,30 @@ export function addComment(postId, text, parentId) {
       return { ...p, comments: p.comments.map((x) => (x.id === parentId ? { ...x, replies: [...x.replies, c] } : x)) };
     });
   });
+}
+export function deleteComment(postId, cid) {
+  const p = state.posts.find((x) => x.id === postId);
+  set((s) => { s.posts = s.posts.map((x) => (x.id !== postId ? x : { ...x, comments: x.comments.filter((c) => c.id !== cid || c.author !== s.me).map((c) => ({ ...c, replies: c.replies.filter((r) => r.id !== cid || r.author !== s.me) })) })); });
+  if (p?.cloud) cloud.deleteCommentOnline(cid).then(() => refreshFeed()).catch((e) => { errorHandler('Could not delete comment: ' + e.message); refreshFeed(); });
+}
+export function toggleCommentLike(postId, cid) {
+  const p = state.posts.find((x) => x.id === postId);
+  const meId = state.me;
+  let on = false;
+  const flip = (c) => { if (c.id !== cid) return c; const l = c.likes || []; on = !l.includes(meId); return { ...c, likes: on ? [...l, meId] : l.filter((x) => x !== meId) }; };
+  set((s) => { s.posts = s.posts.map((x) => (x.id !== postId ? x : { ...x, comments: x.comments.map((c) => ({ ...flip(c), replies: c.replies.map(flip) })) })); });
+  if (p?.cloud) cloud.setCommentLike(meId, cid, on).catch((e) => { errorHandler('Could not save like: ' + e.message); refreshFeed(); });
+}
+export async function publishNow(postId) {
+  try { await cloud.publishPostNow(postId); await refreshFeed(); return null; } catch (e) { return e.message; }
+}
+export async function lockProfile(lock) {
+  if (!state.users[state.me]?.cloud) { updateSettings({ profilePublic: !lock }); return null; }
+  try {
+    await cloud.setProfileLock(lock);
+    set((s) => { s.settings = { ...s.settings, [s.me]: { ...mySettings(s), profilePublic: !lock } }; });
+    refreshSocial(); return null;
+  } catch (e) { return e.message; }
 }
 export function sharePost(postId, text) {
   if (state.posts.find((p) => p.id === postId)?.cloud) {

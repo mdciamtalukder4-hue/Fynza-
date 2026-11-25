@@ -24,6 +24,7 @@ jobs:
           npx cap add android
           M=android/app/src/main/AndroidManifest.xml
           sed -i 's#<application#<uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <application#' $M
+          cp -r res/mipmap-* android/app/src/main/res/ 2>/dev/null || true
           npx cap sync android
       - name: Build debug APK
         working-directory: android

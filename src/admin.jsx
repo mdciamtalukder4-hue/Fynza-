@@ -8,7 +8,7 @@ import { TwoFactor } from './monet.jsx';
 import { sessionAal, mfaFactors, mfaLoginVerify, getSession } from './supabase.js';
 import { AdminMore, MORE_TABS } from './admin2.jsx';
 
-const KIND = { post: 'Post', comment: 'Comment', message: 'Message', user: 'User', group: 'Group', page: 'Page' };
+const KIND = { reel: 'Reel', listing: 'Listing', reel_comment: 'Reel comment', post: 'Post', comment: 'Comment', message: 'Message', user: 'User', group: 'Group', page: 'Page' };
 const T = (x) => new Date(x).getTime();
 
 function Overview() {
