@@ -384,3 +384,6 @@ export const setCommentLike = (meId, cid, on) => on
   : rest(`comment_likes?comment_id=eq.${cid}&user_id=eq.${meId}`, { method: 'DELETE' });
 export const profilesByIds = (ids) => ids.length ? rest('profiles?select=*&id=' + inList(ids)) : Promise.resolve([]);
 export const setProfileLock = (lock) => rest('rpc/set_profile_lock', { method: 'POST', body: { p_lock: !!lock } });
+
+export const markStorySeen = (id) => rpcP('mark_story_seen', { p_story: id });
+export const storyViewers = (id) => rpcP('story_viewers', { p_story: id });

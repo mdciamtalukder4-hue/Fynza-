@@ -446,3 +446,4 @@ input[role=switch]:focus-visible~.switch{outline:2px solid var(--blue);outline-o
 .pv2-reel{position:relative}
 .pv2-reel .pv2-thumb,.pv2-reel .video-loading{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;z-index:0;font-size:0}
 .pv2-reel>svg,.pv2-reel>span{position:relative;z-index:1;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.story-views{position:absolute;bottom:24px;left:16px;z-index:3;background:rgba(0,0,0,.5);color:#fff;border-color:rgba(255,255,255,.4)}

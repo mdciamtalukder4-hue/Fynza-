@@ -7,6 +7,7 @@ import {
 } from './store.js';
 import { askReport, SponsoredSlot } from './monet.jsx';
 import { Avatar, Scene, Video, Sheet, toast, Empty, go, Badge, useHash } from './ui.jsx';
+import { markStorySeen, storyViewers } from './cloud.js';
 
 export const REACTIONS = { like: '👍', love: '❤️', haha: '😂', wow: '😮', sad: '😢', angry: '😡' };
 const AUD = { public: ['Public', IoGlobeOutline], friends: ['Friends', IoPeopleOutline], me: ['Only me', IoLockClosedOutline] };
@@ -97,7 +98,11 @@ function StoryView({ list, start, onClose }) {
   const [pct, setPct] = useState(0);
   const paused = useRef(false);
   const down = useRef(0);
+  const [vw, setVw] = useState(null); // viewers list sheet
   const st = list[i];
+  const online = !!me(s)?.cloud;
+  useEffect(() => { if (online && st && st.author !== s.me) markStorySeen(st.id).catch(() => {}); }, [st?.id]); // eslint-disable-line
+  const showViewers = async () => { paused.current = true; try { setVw(await storyViewers(st.id) || []); } catch (e) { toast('Could not load viewers.'); paused.current = false; } };
   const group = list.map((x, k) => [x, k]).filter(([x]) => x.author === st?.author).map(([, k]) => k);
   const next = () => (i < list.length - 1 ? (setI(i + 1), setPct(0)) : onClose());
   const prev = () => (i > 0 && list[i - 1].author === st.author ? (setI(i - 1), setPct(0)) : setPct(0));
@@ -123,6 +128,8 @@ function StoryView({ list, start, onClose }) {
       <div className="story-who"><Avatar user={a} size={36} /><b>{a?.name}</b><small>{timeAgo(st.time)}</small></div>
       <button className="icon-btn story-x" aria-label="Close story" onClick={onClose}>✕</button>
       {st.text && <p className="story-text">{st.text}</p>}
+      {st.author === s.me && online && <button className="btn ghost sm story-views" onClick={showViewers}>👁 Viewers</button>}
+      {vw && <Sheet title={'Seen by ' + vw.length} onClose={() => { setVw(null); paused.current = false; }}>{vw.length ? vw.map((v) => <a key={v.id} className="menu-item" href={'#/profile/' + v.id}><Avatar user={{ name: v.name, avatar: v.avatar_url }} size={32} /> <span>{v.name}</span> <small className="muted">{timeAgo(new Date(v.viewed_at).getTime())}</small></a>) : <p className="muted pad">No one has seen this story yet.</p>}</Sheet>}
       {st.author === s.me && <button className="btn ghost sm story-del" onClick={() => { deleteStory(st.id); onClose(); toast('Story deleted.'); }}>Delete</button>}
     </div>
   );
