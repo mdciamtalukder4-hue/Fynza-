@@ -5,7 +5,7 @@ import {
   isBlocked, blockUser, unblockUser, report, openChat, compressImage, mySettings, visitsOfMe, fullTime, fetchUserOnline, loadProfileExtras, openChatOnline, liveStories, getState,
 } from './store.js';
 import { askReport } from './monet.jsx';
-import { Avatar, Sheet, toast, go, back, Empty, LocalNote, Badge } from './ui.jsx';
+import { Avatar, Sheet, toast, go, back, Empty, LocalNote, Badge, Video } from './ui.jsx';
 import { PostCard, canSee } from './feed.jsx';
 import * as api from './profileApi.js';
 
@@ -350,7 +350,7 @@ export function Profile({ id }) {
             )}
             {tab === 'friends' && <FriendsTab id={id} own={own} u={u} s={s} friends={friends} />}
             {tab === 'photos' && (photos.length ? <div className="photo-grid">{photos.map((p) => <img key={p.id} src={p.img} alt="" />)}</div> : <Empty title="No photos" />)}
-            {tab === 'reels' && (reels.length ? <div className="pv2-reels">{reels.map((r) => <a key={r.id} className="pv2-reel" href={'#/reels/' + r.id}><IoPlay size={22} /><span>{r.caption || 'Reel'}</span></a>)}</div> : <Empty title="No reels" />)}
+            {tab === 'reels' && (reels.length ? <div className="pv2-reels">{reels.map((r) => <a key={r.id} className="pv2-reel" href={'#/reels/' + r.id}><Video vkey={r.videoKey} url={r.videoUrl} className="pv2-thumb" controls={false} muted preload="metadata" onLoadedMetadata={(e) => { try { e.currentTarget.currentTime = 0.1; } catch (x) { /* ignore */ } }} /><IoPlay size={22} /><span>{r.caption || 'Reel'}</span></a>)}</div> : <Empty title="No reels" />)}
           </>
         )}
 

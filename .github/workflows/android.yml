@@ -43,7 +43,7 @@ jobs:
           import re
           t=t.replace('buildTypes {',sc,1)
           t=re.sub(r'versionCode \d+','versionCode ${{ github.run_number }}',t,count=1)
-          t=re.sub(r'versionName "[^"]*"','versionName "${{ github.run_number }}.0"',t,count=1)
+          t=re.sub(r'versionName "[^"]*"','versionName "1.${{ github.run_number }}"',t,count=1)
           open(p,'w').write(t)
           PY
       - name: Build debug APK
